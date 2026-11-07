@@ -1,7 +1,18 @@
+import { useState } from 'react';
 import { PRODUCTS, PRODUCT_ORDER } from './data/products';
+import { AssetValidationViewer } from './viewer/AssetValidationViewer';
 import './App.css';
 
 export default function App() {
+  const [viewMode, setViewMode] = useState<'phase0' | 'viewer'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('view') === 'phase0' ? 'phase0' : 'viewer';
+  });
+
+  if (viewMode === 'viewer') {
+    return <AssetValidationViewer onBack={() => setViewMode('phase0')} />;
+  }
+
   return (
     <main className="phase-container">
       <header className="phase-header">
@@ -9,7 +20,25 @@ export default function App() {
           <div className="brand-label">Coca-Cola 3D Continuous Experience</div>
           <h2 className="phase-title">Phase 0 — Creative Direction & Technical Foundation</h2>
         </div>
-        <span className="badge-phase">PHASE 0 READY</span>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button
+            onClick={() => setViewMode('viewer')}
+            style={{
+              background: '#f40009',
+              color: '#ffffff',
+              border: 'none',
+              padding: '0.45rem 1rem',
+              borderRadius: '6px',
+              fontWeight: 600,
+              fontSize: '0.8125rem',
+              cursor: 'pointer',
+              letterSpacing: '0.02em',
+            }}
+          >
+            Launch 3D Asset Viewer →
+          </button>
+          <span className="badge-phase">PHASE 0 READY</span>
+        </div>
       </header>
 
       <section className="phase-content">
@@ -53,7 +82,7 @@ export default function App() {
 
       <footer className="phase-footer">
         <div>Foundation: Vite + React 19 + TypeScript</div>
-        <div>Next Phase: Phase 1 — 3D Asset Pipeline</div>
+        <div>Active Milestone: Phase 1.2 — Real-Time GLB Validation</div>
       </footer>
     </main>
   );
