@@ -681,6 +681,25 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
     setCameraView('front');
   };
 
+  // Expose programmatic state setter for automated validation tests
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __SET_VIEWER_STATE__: unknown }).__SET_VIEWER_STATE__ = (opts: {
+        product?: ProductVariant;
+        strategy?: MaterialStrategy;
+        lighting?: LightingPreset;
+        tier?: TextureTier;
+        cameraView?: 'front' | 'side' | 'three-quarter' | 'top' | 'bottom';
+      }) => {
+        if (opts.product) setProduct(opts.product);
+        if (opts.strategy) setStrategy(opts.strategy);
+        if (opts.lighting) setLightingPreset(opts.lighting);
+        if (opts.tier) setTextureTier(opts.tier);
+        if (opts.cameraView) setCameraView(opts.cameraView);
+      };
+    }
+  }, []);
+
   return (
     <div className="viewer-root">
       {/* Top Header */}

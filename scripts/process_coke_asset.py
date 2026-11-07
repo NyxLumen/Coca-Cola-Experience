@@ -176,6 +176,41 @@ def align_and_normalize_geometry(verts, normals, faces, uvs):
     
     return v_final.astype(np.float32), n_final.astype(np.float32), uvs_gltf.astype(np.float32), faces
 
+def build_corrected_roughness(raw_r):
+    """
+    Calibrates and corrects defective source roughness data:
+    1. Preserves circumferential brushed ridges in valid body region.
+    2. Seamlessly extends neck taper across V < 0.185 (eliminating logo shadows and 0-voids).
+    3. Replaces 48% zero-value void on exposed aluminum lid/chime with calibrated satin aluminum.
+    4. Eliminates mirror-specular zero patches while retaining stamped tab/rim features.
+    """
+    H, W = raw_r.shape
+    raw_float = raw_r.astype(np.float32)
+
+    body_mask = np.zeros((H, W), dtype=bool)
+    body_mask[758:4055, 368:2703] = True
+
+    variation = (raw_float - 57.28) / 20.0
+    variation = np.clip(variation, -1.0, 1.0)
+
+    corrected = np.zeros((H, W), dtype=np.float32)
+    body_base = 72.0
+    corrected[body_mask] = np.clip(body_base + variation[body_mask] * 16.0, 48.0, 102.0)
+
+    for r in range(250, 758):
+        corrected[r, 368:2703] = 72.0
+
+    raw_right = raw_float[:, 2703:]
+    right_base = 76.0
+    right_variation = (raw_right - 40.0) / 35.0
+    corrected[:, 2703:] = np.where(raw_right > 5, np.clip(right_base + right_variation * 18.0, 52.0, 108.0), right_base)
+
+    corrected[:250, :] = 76.0
+    zero_mask = corrected < 10.0
+    corrected[zero_mask] = 74.0
+
+    return np.clip(np.round(corrected), 0, 255).astype(np.uint8)
+
 def prepare_pbr_textures():
     print(f"[4/7] Preparing and packaging PBR textures...")
     
@@ -191,18 +226,19 @@ def prepare_pbr_textures():
     with open(norm_path, "rb") as f:
         normal_bytes = f.read()
         
-    print(f"      Packing glTF metallicRoughness texture from: {rough_path}")
+    print(f"      Packing glTF metallicRoughness texture with calibrated roughness from: {rough_path}")
     im_rough = Image.open(rough_path)
     arr_rough = np.array(im_rough)
+    corrected_rough = build_corrected_roughness(arr_rough[:, :, 0])
     
     # glTF metallicRoughness standard:
     # R: 255 (unused in glTF core)
-    # G: roughness (sampled from grayscale roughness map)
+    # G: roughness (sampled from calibrated roughness map)
     # B: 255 (metalness base, modulated by material.metallicFactor)
     # A: 255
     mr = np.zeros((4096, 4096, 4), dtype=np.uint8)
     mr[:, :, 0] = 255
-    mr[:, :, 1] = arr_rough[:, :, 0]
+    mr[:, :, 1] = corrected_rough
     mr[:, :, 2] = 255
     mr[:, :, 3] = 255
     
