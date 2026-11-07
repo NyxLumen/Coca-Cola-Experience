@@ -57,7 +57,9 @@ async function run() {
         const list = await res.json();
         tab = list.find((t) => t.url.includes('localhost:4173'));
         if (tab) break;
-      } catch (err) {}
+      } catch {
+        // Retry connection
+      }
     }
 
     if (!tab) {
@@ -73,7 +75,6 @@ async function run() {
 
     console.log('[3/5] Waiting for coke-can.glb to finish loading into Three.js...');
     let loaded = false;
-    let telemetryInfo = null;
 
     for (let i = 0; i < 30; i++) {
       await sleep(500);
@@ -97,7 +98,6 @@ async function run() {
       const val = evalRes.result.value;
       if (val && !val.isLoading && val.triangles !== '0') {
         loaded = true;
-        telemetryInfo = val;
         console.log(`      Model loaded successfully! Triangles in HUD: ${val.triangles}`);
         break;
       }

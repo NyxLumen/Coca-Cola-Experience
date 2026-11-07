@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import './AssetValidationViewer.css';
 
-export type MaterialMode =
-  | 'default-gltf'
-  | 'uniform-lacquer'
-  | 'derived-dual-pbr'
+export type ProductVariant = 'original' | 'diet' | 'zero';
+export type LightingPreset = 'studio' | 'neutral' | 'directional';
+export type TextureTier = '4k' | '2k' | '1k';
+export type MaterialStrategy =
+  | 'config-a-baseline'
+  | 'config-a-enhanced'
+  | 'dual-material-groups'
+  | 'mask-driven-pbr'
+  | 'unlit-base-color'
+  | 'uv-checker'
   | 'debug-normals'
   | 'debug-roughness'
   | 'debug-metalness';
@@ -21,6 +27,7 @@ interface TelemetryData {
   drawCalls: number;
   geometriesCount: number;
   texturesCount: number;
+  estimatedVramMb: number;
   dimensions: string;
 }
 
@@ -30,12 +37,21 @@ interface AssetValidationViewerProps {
 
 export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [materialMode, setMaterialMode] = useState<MaterialMode>('derived-dual-pbr');
+
+  // Configuration States
+  const [product, setProduct] = useState<ProductVariant>('original');
+  const [strategy, setStrategy] = useState<MaterialStrategy>('config-a-baseline');
+  const [lightingPreset, setLightingPreset] = useState<LightingPreset>('studio');
+  const [textureTier, setTextureTier] = useState<TextureTier>('2k');
   const [wireframe, setWireframe] = useState<boolean>(false);
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
-  const [lightIntensity, setLightIntensity] = useState<number>(1.2);
+  const [disableNormalMap, setDisableNormalMap] = useState<boolean>(false);
+  const [disableRoughnessMap, setDisableRoughnessMap] = useState<boolean>(false);
+  const [lightIntensity, setLightIntensity] = useState<number>(1.0);
   const [envIntensity, setEnvIntensity] = useState<number>(1.0);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Performance Telemetry State
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     fps: 0,
     frameTimeMs: 0,
@@ -44,10 +60,11 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
     drawCalls: 0,
     geometriesCount: 0,
     texturesCount: 0,
+    estimatedVramMb: 48,
     dimensions: 'calculating...',
   });
 
-  // Mutable refs to Three.js objects for real-time reactivity without full re-mounts
+  // Three.js References
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -58,9 +75,17 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
     rimLight: THREE.DirectionalLight;
     ambientLight: THREE.AmbientLight;
   } | null>(null);
-  const materialsCacheRef = useRef<Map<MaterialMode, THREE.Material>>(new Map());
 
-  // Setup Three.js Scene, Camera, Renderer, Controls
+  // Texture Cache
+  const textureLoader = useMemo(() => new THREE.TextureLoader(), []);
+  const texturesCacheRef = useRef<Map<string, THREE.Texture>>(new Map());
+  const glbOriginalTexturesRef = useRef<{
+    diffuse: THREE.Texture | null;
+    normal: THREE.Texture | null;
+    mr: THREE.Texture | null;
+  }>({ diffuse: null, normal: null, mr: null });
+
+  // Initialize Scene, Camera, Renderer, Controls
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
@@ -73,8 +98,8 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
     sceneRef.current = scene;
     scene.background = new THREE.Color(0x0e0e11);
 
-    // 2. Camera
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 50);
+    // 2. Camera (35mm equivalent in vertical framing)
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 50);
     camera.position.set(0, 0.15, 3.2);
     cameraRef.current = camera;
 
@@ -132,8 +157,7 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
 
     lightsRef.current = { keyLight, fillLight, rimLight, ambientLight };
 
-    // 7. Subtle Contact Shadow Plane
-    // Generate soft radial gradient texture for the contact shadow
+    // 7. Subtle Ground Contact Shadow Plane
     const shadowCanvas = document.createElement('canvas');
     shadowCanvas.width = 256;
     shadowCanvas.height = 256;
@@ -158,10 +182,10 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
       })
     );
     shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = -1.002; // Placed right below the base at y = -1.000
+    shadowPlane.position.y = -1.002;
     scene.add(shadowPlane);
 
-    // 8. Model Loading with GLTFLoader
+    // 8. Load Canonical GLB
     const loader = new GLTFLoader();
     const loadStartTime = performance.now();
 
@@ -196,141 +220,56 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
             dimString = `${size.x.toFixed(3)} × ${size.y.toFixed(3)} × ${size.z.toFixed(3)}`;
           }
 
-          // Build Materials Cache
-          const defaultMat = mesh.material as THREE.MeshStandardMaterial;
-          const diffuseMap = defaultMat.map;
-          const normalMap = defaultMat.normalMap;
-          const mrMap = defaultMat.metalnessMap;
-
-          materialsCacheRef.current.set('default-gltf', defaultMat);
-
-          // Config B: Uniform Dielectric Clearcoat
-          const lacquerMat = new THREE.MeshPhysicalMaterial({
-            map: diffuseMap,
-            normalMap: normalMap,
-            roughnessMap: mrMap,
-            metalness: 0.08,
-            roughness: 0.16,
-            clearcoat: 1.0,
-            clearcoatRoughness: 0.08,
-            reflectivity: 0.5,
-          });
-          materialsCacheRef.current.set('uniform-lacquer', lacquerMat);
-
-          // Config C: Derived Dual-PBR (Shader-level separation of Painted Lacquer vs Exposed Aluminum)
-          const dualPbrMat = new THREE.MeshPhysicalMaterial({
-            map: diffuseMap,
-            normalMap: normalMap,
-            roughnessMap: mrMap,
-            metalness: 1.0,
-            roughness: 1.0,
-            clearcoat: 1.0,
-            clearcoatRoughness: 0.08,
-          });
-
-          // Inject custom chrominance logic in GLSL fragment shader
-          dualPbrMat.onBeforeCompile = (shader) => {
-            // Modify fragment shader to calculate chrominance on the fly
-            shader.fragmentShader = shader.fragmentShader.replace(
-              '#include <roughnessmap_fragment>',
-              `
-              #include <roughnessmap_fragment>
-              // Sample base diffuse color to isolate red body paint from aluminum surfaces
-              vec4 colSample = texture2D(map, vMapUv);
-              float redness = colSample.r - max(colSample.g, colSample.b);
-              float isPaint = smoothstep(0.12, 0.32, redness);
-              
-              // Paint: smooth clearcoat lacquer over ink (low roughness)
-              // Metal: brushed aluminum with slightly higher microscopic scatter
-              roughnessFactor = mix(clamp(roughnessFactor * 1.45 + 0.10, 0.0, 1.0), roughnessFactor * 0.95, isPaint);
-              `
-            );
-
-            shader.fragmentShader = shader.fragmentShader.replace(
-              '#include <metalnessmap_fragment>',
-              `
-              #include <metalnessmap_fragment>
-              // Where isPaint == 1.0: metalness = 0.04 (dielectric lacquer)
-              // Where isPaint == 0.0: metalness = 0.94 (exposed aluminum lid, rim, chime)
-              metalnessFactor = mix(0.94, 0.04, isPaint);
-              `
-            );
-
-            shader.fragmentShader = shader.fragmentShader.replace(
-              '#include <clearcoat_fragment>',
-              `
-              #include <clearcoat_fragment>
-              // Clearcoat applied only to the painted body, disabled on bare metal
-              clearcoat = mix(0.0, 1.0, isPaint);
-              clearcoatRoughness = 0.07;
-              `
-            );
+          // Cache GLB embedded original textures
+          const originalMat = mesh.material as THREE.MeshStandardMaterial;
+          glbOriginalTexturesRef.current = {
+            diffuse: originalMat.map,
+            normal: originalMat.normalMap,
+            mr: originalMat.metalnessMap,
           };
-          materialsCacheRef.current.set('derived-dual-pbr', dualPbrMat);
 
-          // Config D: Debug Normals
-          const normalsMat = new THREE.MeshNormalMaterial({
-            normalMap: normalMap,
-          });
-          materialsCacheRef.current.set('debug-normals', normalsMat);
+          // Setup geometry groups for Dual-Material segmentation:
+          // Group 0: Cylindrical Body (Y in [-0.82, 0.82])
+          // Group 1: Exposed Aluminum (Rim, Lid, Pull Tab, Bottom Dome)
+          const geom = mesh.geometry;
+          if (geom.index) {
+            const indices = geom.index.array;
+            const positions = geom.attributes.position.array;
+            const bodyIndices: number[] = [];
+            const metalIndices: number[] = [];
 
-          // Config E: Debug Roughness (Shader visualizing roughness grayscale)
-          const roughnessDebugMat = new THREE.ShaderMaterial({
-            uniforms: {
-              uRoughnessMap: { value: mrMap },
-            },
-            vertexShader: `
-              varying vec2 vUv;
-              void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            for (let i = 0; i < indices.length; i += 3) {
+              const i0 = indices[i];
+              const i1 = indices[i + 1];
+              const i2 = indices[i + 2];
+              const y0 = positions[i0 * 3 + 1];
+              const y1 = positions[i1 * 3 + 1];
+              const y2 = positions[i2 * 3 + 1];
+              const yAvg = (y0 + y1 + y2) / 3.0;
+
+              if (yAvg >= -0.82 && yAvg <= 0.82) {
+                bodyIndices.push(i0, i1, i2);
+              } else {
+                metalIndices.push(i0, i1, i2);
               }
-            `,
-            fragmentShader: `
-              uniform sampler2D uRoughnessMap;
-              varying vec2 vUv;
-              void main() {
-                // glTF roughness is stored in the GREEN channel
-                float r = texture2D(uRoughnessMap, vUv).g;
-                gl_FragColor = vec4(vec3(r), 1.0);
-              }
-            `,
-          });
-          materialsCacheRef.current.set('debug-roughness', roughnessDebugMat);
+            }
 
-          // Config F: Debug Metalness (Shader visualizing derived metalness)
-          const metalnessDebugMat = new THREE.ShaderMaterial({
-            uniforms: {
-              uDiffuseMap: { value: diffuseMap },
-            },
-            vertexShader: `
-              varying vec2 vUv;
-              void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-              }
-            `,
-            fragmentShader: `
-              uniform sampler2D uDiffuseMap;
-              varying vec2 vUv;
-              void main() {
-                vec4 col = texture2D(uDiffuseMap, vUv);
-                float isPaint = smoothstep(0.12, 0.32, col.r - max(col.g, col.b));
-                float metalness = mix(0.94, 0.04, isPaint);
-                gl_FragColor = vec4(vec3(metalness), 1.0);
-              }
-            `,
-          });
-          materialsCacheRef.current.set('debug-metalness', metalnessDebugMat);
+            // Create reordered index buffer for clean multi-material rendering
+            const reordered = new Uint16Array(bodyIndices.length + metalIndices.length);
+            reordered.set(bodyIndices, 0);
+            reordered.set(metalIndices, bodyIndices.length);
+            geom.setIndex(new THREE.BufferAttribute(reordered, 1));
 
-          // Apply initially selected material
-          mesh.material = dualPbrMat;
+            // Set geometry groups: group 0 = body, group 1 = metal
+            geom.clearGroups();
+            geom.addGroup(0, bodyIndices.length, 0);
+            geom.addGroup(bodyIndices.length, metalIndices.length, 1);
+          }
 
-          // Record initial telemetry
           setTelemetry((prev) => ({
             ...prev,
             loadTimeMs: duration,
-            triangles: mesh.geometry.index ? mesh.geometry.index.count / 3 : 0,
+            triangles: geom.index ? geom.index.count / 3 : 0,
             dimensions: dimString,
           }));
         }
@@ -339,13 +278,13 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
         setLoading(false);
       },
       undefined,
-      (error) => {
-        console.error('Error loading GLB:', error);
+      (err) => {
+        console.error('Error loading GLB:', err);
         setLoading(false);
       }
     );
 
-    // 9. Render & Animation Loop with FPS Telemetry
+    // 9. Animation & FPS Telemetry Loop
     let animationFrameId: number;
     let lastTime = performance.now();
     let frameCount = 0;
@@ -375,7 +314,6 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
         }));
       }
 
-      // Auto-rotation if enabled
       if (canMeshRef.current && autoRotate) {
         canMeshRef.current.rotation.y += 0.008;
       }
@@ -386,7 +324,7 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
 
     animationFrameId = requestAnimationFrame(animate);
 
-    // 10. Responsive resize handler
+    // 10. Resize handler
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
@@ -398,7 +336,6 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
 
     window.addEventListener('resize', handleResize);
 
-    // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
@@ -410,48 +347,338 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
     };
   }, [autoRotate]);
 
-  // Update Material Configuration dynamically
+  // Helper to load or fetch cached textures
+  const getTexture = useCallback((path: string, isColor: boolean = false): THREE.Texture => {
+    if (texturesCacheRef.current.has(path)) {
+      return texturesCacheRef.current.get(path)!;
+    }
+    const tex = textureLoader.load(path);
+    if (isColor) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+    } else {
+      tex.colorSpace = THREE.NoColorSpace;
+    }
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    // CRITICAL FIX: glTF 2.0 convention specifies (0,0) at top-left.
+    // Three.js TextureLoader defaults to flipY = true which inverted V coordinates,
+    // corrupting Diet Coke and Zero Sugar with black texture margins on body and chime.
+    tex.flipY = false;
+    texturesCacheRef.current.set(path, tex);
+    return tex;
+  }, [textureLoader]);
+
+  // Dynamic Material & Texture Strategy Construction
   useEffect(() => {
     const mesh = canMeshRef.current;
-    if (!mesh) return;
+    if (!mesh || loading) return;
 
-    const selectedMat = materialsCacheRef.current.get(materialMode);
-    if (selectedMat) {
-      mesh.material = selectedMat;
-      if ('wireframe' in selectedMat) {
-        (selectedMat as THREE.MeshStandardMaterial).wireframe = wireframe;
+    // Resolve Textures for current product and resolution tier
+    let diffuseTex: THREE.Texture | null = null;
+    let normalTex: THREE.Texture | null = null;
+    let mrTex: THREE.Texture | null = null;
+    let maskTex: THREE.Texture | null = null;
+
+    const prodName = product === 'original' ? 'classic' : product;
+
+    if (textureTier === '4k') {
+      // 4K Original Source Textures
+      diffuseTex = getTexture(`/textures/4k/coke_${prodName}_diffuse_4k.png`, true);
+      normalTex = disableNormalMap ? null : getTexture(`/textures/4k/coke_normal_4k.png`, false);
+      mrTex = disableRoughnessMap ? null : getTexture(`/textures/4k/coke_${prodName}_metallic_roughness_4k.png`, false);
+      maskTex = getTexture(`/textures/4k/coke_metallic_mask_4k.png`, false);
+    } else {
+      // 2K or 1K Optimized WebP Textures
+      const tier = textureTier;
+      diffuseTex = getTexture(`/textures/${tier}/coke_${prodName}_diffuse_${tier}.webp`, true);
+      normalTex = disableNormalMap ? null : getTexture(`/textures/${tier}/coke_normal_${tier}.webp`, false);
+      mrTex = disableRoughnessMap ? null : getTexture(`/textures/${tier}/coke_${prodName}_metallic_roughness_${tier}.webp`, false);
+      maskTex = getTexture(`/textures/${tier}/coke_metallic_mask_${tier}.webp`, false);
+    }
+
+    const setMaterialCleanly = (mat: THREE.Material | THREE.Material[]) => {
+      if (Array.isArray(mat)) {
+        mesh.material = mat;
+      } else if (mesh.geometry.groups && mesh.geometry.groups.length > 0) {
+        mesh.material = [mat, mat];
+      } else {
+        mesh.material = mat;
       }
-      selectedMat.needsUpdate = true;
-    }
-  }, [materialMode, wireframe]);
+    };
 
-  // Update Light Intensities dynamically
+    // Material Construction per Strategy
+    if (strategy === 'unlit-base-color') {
+      // Test A: Unlit Base-Color only (linear/raw unlit presentation)
+      setMaterialCleanly(new THREE.MeshBasicMaterial({
+        map: diffuseTex,
+        toneMapped: false,
+        wireframe,
+      }));
+    } else if (strategy === 'uv-checker') {
+      // UV Diagnostic numbered checkerboard
+      const checker = getTexture('/textures/uv_checker_numbered.png', true);
+      setMaterialCleanly(new THREE.MeshBasicMaterial({
+        map: checker,
+        wireframe,
+      }));
+    } else if (strategy === 'config-a-baseline') {
+      // Config A Baseline: Uniform MeshStandardMaterial (Preferred visual baseline)
+      const mat = new THREE.MeshStandardMaterial({
+        map: diffuseTex,
+        normalMap: normalTex,
+        roughnessMap: mrTex,
+        metalnessMap: mrTex,
+        metalness: 0.85,
+        roughness: 1.0,
+        wireframe,
+      });
+      setMaterialCleanly(mat);
+    } else if (strategy === 'config-a-enhanced') {
+      // Config A Enhanced: Product-Specific Physical Materials
+      let metalnessVal = 0.82;
+      let roughnessVal = 0.95;
+      let clearcoatVal = 0.35;
+      let clearcoatRoughnessVal = 0.08;
+
+      if (product === 'diet') {
+        metalnessVal = 0.90;
+        roughnessVal = 1.00;
+        clearcoatVal = 0.15;
+        clearcoatRoughnessVal = 0.05;
+      } else if (product === 'zero') {
+        metalnessVal = 0.70;
+        roughnessVal = 1.05;
+        clearcoatVal = 0.40;
+        clearcoatRoughnessVal = 0.08;
+      }
+
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: diffuseTex,
+        normalMap: normalTex,
+        roughnessMap: mrTex,
+        metalness: metalnessVal,
+        roughness: roughnessVal,
+        clearcoat: clearcoatVal,
+        clearcoatRoughness: clearcoatRoughnessVal,
+        wireframe,
+      });
+      setMaterialCleanly(mat);
+    } else if (strategy === 'dual-material-groups') {
+      // Dual-Material Geometry Segmentation
+      // Material 0: Body surface (Preserves Config A preferred sheen + subtle clearcoat)
+      // Material 1: Exposed metal (rims, lid, pull tab, bottom chime in pure milled aluminum)
+      let bodyMetalness = 0.85;
+      let bodyRoughness = 0.95;
+      let bodyClearcoat = 0.35;
+      let bodyClearcoatRoughness = 0.08;
+
+      if (product === 'diet') {
+        bodyMetalness = 0.90;
+        bodyRoughness = 1.00;
+        bodyClearcoat = 0.15;
+        bodyClearcoatRoughness = 0.05;
+      } else if (product === 'zero') {
+        bodyMetalness = 0.72;
+        bodyRoughness = 1.05;
+        bodyClearcoat = 0.35;
+        bodyClearcoatRoughness = 0.08;
+      }
+
+      const bodyMat = new THREE.MeshPhysicalMaterial({
+        map: diffuseTex,
+        normalMap: normalTex,
+        roughnessMap: mrTex,
+        metalness: bodyMetalness,
+        roughness: bodyRoughness,
+        clearcoat: bodyClearcoat,
+        clearcoatRoughness: bodyClearcoatRoughness,
+        wireframe,
+      });
+
+      // Exposed metal lid & chime uses clean unopened stamped aluminum diffuse texture
+      const metalDiffuse = (product === 'original')
+        ? diffuseTex
+        : (textureTier === '4k'
+            ? getTexture('/textures/4k/coke_classic_diffuse_4k.png', true)
+            : getTexture(`/textures/${textureTier}/coke_classic_diffuse_${textureTier}.webp`, true));
+
+      const metalMat = new THREE.MeshStandardMaterial({
+        map: metalDiffuse,
+        normalMap: normalTex,
+        roughnessMap: mrTex,
+        metalness: 0.95,
+        roughness: 0.28,
+        wireframe,
+      });
+
+      mesh.material = [bodyMat, metalMat];
+    } else if (strategy === 'mask-driven-pbr') {
+      // Mask-Driven PBR: Uses pre-baked metallic mask texture
+      const mat = new THREE.MeshStandardMaterial({
+        map: diffuseTex,
+        normalMap: normalTex,
+        roughnessMap: mrTex,
+        metalnessMap: maskTex,
+        metalness: product === 'diet' ? 0.90 : 1.0,
+        roughness: 1.0,
+        wireframe,
+      });
+      setMaterialCleanly(mat);
+    } else if (strategy === 'debug-normals') {
+      setMaterialCleanly(new THREE.MeshNormalMaterial({
+        normalMap: normalTex,
+        wireframe,
+      }));
+    } else if (strategy === 'debug-roughness') {
+      // Dedicated Roughness Debug Material:
+      // Samples green channel strictly as vec3(roughnessValue)
+      // toneMapped=false prevents ACESFilmic tone-mapping distortion
+      const debugRoughnessMat = new THREE.ShaderMaterial({
+        uniforms: { uRoughnessMap: { value: mrTex } },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uRoughnessMap;
+          varying vec2 vUv;
+          void main() {
+            float roughnessValue = texture2D(uRoughnessMap, vUv).g;
+            gl_FragColor = vec4(vec3(roughnessValue), 1.0);
+          }
+        `,
+        toneMapped: false,
+        wireframe,
+      });
+      setMaterialCleanly(debugRoughnessMat);
+    } else if (strategy === 'debug-metalness') {
+      // Dedicated Metalness Debug Material:
+      // Samples blue channel strictly as vec3(metalnessValue)
+      const debugMetalnessMat = new THREE.ShaderMaterial({
+        uniforms: { uMetallicMap: { value: mrTex } },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uMetallicMap;
+          varying vec2 vUv;
+          void main() {
+            float metalnessValue = texture2D(uMetallicMap, vUv).b;
+            gl_FragColor = vec4(vec3(metalnessValue), 1.0);
+          }
+        `,
+        toneMapped: false,
+        wireframe,
+      });
+      setMaterialCleanly(debugMetalnessMat);
+    }
+
+    // Expose debug telemetry to window for runtime validation
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __COKE_DEBUG__: unknown }).__COKE_DEBUG__ = {
+        product,
+        prodName,
+        strategy,
+        textureTier,
+        textures: {
+          diffuse: diffuseTex?.image ? { loaded: true, width: (diffuseTex.image as { width?: number }).width, height: (diffuseTex.image as { height?: number }).height } : null,
+          normal: normalTex?.image ? { loaded: true, width: (normalTex.image as { width?: number }).width, height: (normalTex.image as { height?: number }).height } : null,
+          mr: mrTex?.image ? { loaded: true, width: (mrTex.image as { width?: number }).width, height: (mrTex.image as { height?: number }).height } : null,
+        },
+      };
+    }
+
+    // Estimate VRAM consumption based on active texture tier
+    const vramMap: Record<TextureTier, number> = { '4k': 192, '2k': 48, '1k': 12 };
+    setTelemetry((prev) => ({
+      ...prev,
+      estimatedVramMb: vramMap[textureTier],
+    }));
+  }, [product, strategy, textureTier, wireframe, disableNormalMap, disableRoughnessMap, loading, getTexture]);
+
+  // Lighting Preset Switcher
   useEffect(() => {
-    if (!lightsRef.current) return;
+    if (!lightsRef.current || !sceneRef.current) return;
     const { keyLight, fillLight, rimLight, ambientLight } = lightsRef.current;
-    keyLight.intensity = 1.8 * lightIntensity;
-    fillLight.intensity = 0.9 * lightIntensity;
-    rimLight.intensity = 2.2 * lightIntensity;
-    ambientLight.intensity = 0.4 * lightIntensity;
-  }, [lightIntensity]);
 
-  // Update Environment Reflection Intensity
-  useEffect(() => {
-    if (sceneRef.current) {
-      sceneRef.current.environmentIntensity = envIntensity;
-    }
-  }, [envIntensity]);
+    if (lightingPreset === 'studio') {
+      // Studio Rig: Balanced Commercial Lighting
+      keyLight.intensity = 1.8 * lightIntensity;
+      keyLight.color.setHex(0xfff6ed);
+      keyLight.position.set(2.8, 3.5, 3.0);
 
-  // Reset Camera View
-  const handleResetCamera = () => {
-    if (cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.set(0, 0.15, 3.2);
-      controlsRef.current.target.set(0, 0, 0);
-      controlsRef.current.update();
+      fillLight.intensity = 0.9 * lightIntensity;
+      fillLight.color.setHex(0xe8f0fc);
+
+      rimLight.intensity = 2.2 * lightIntensity;
+      rimLight.color.setHex(0xffffff);
+
+      ambientLight.intensity = 0.4 * lightIntensity;
+      sceneRef.current.environmentIntensity = 1.0 * envIntensity;
+    } else if (lightingPreset === 'neutral') {
+      // Neutral Soft: Low-contrast diffused studio
+      keyLight.intensity = 1.2 * lightIntensity;
+      keyLight.color.setHex(0xfafafa);
+      keyLight.position.set(2.0, 3.0, 2.5);
+
+      fillLight.intensity = 1.0 * lightIntensity;
+      fillLight.color.setHex(0xf5f5f5);
+
+      rimLight.intensity = 1.2 * lightIntensity;
+      rimLight.color.setHex(0xffffff);
+
+      ambientLight.intensity = 0.6 * lightIntensity;
+      sceneRef.current.environmentIntensity = 0.8 * envIntensity;
+    } else if (lightingPreset === 'directional') {
+      // High-Contrast Directional: Sharp cuts and strong specular highlights
+      keyLight.intensity = 2.6 * lightIntensity;
+      keyLight.color.setHex(0xffffff);
+      keyLight.position.set(3.5, 4.0, 2.0);
+
+      fillLight.intensity = 0.3 * lightIntensity;
+      fillLight.color.setHex(0xd0d8e8);
+
+      rimLight.intensity = 3.0 * lightIntensity;
+      rimLight.color.setHex(0xffffff);
+
+      ambientLight.intensity = 0.2 * lightIntensity;
+      sceneRef.current.environmentIntensity = 1.4 * envIntensity;
     }
+  }, [lightingPreset, lightIntensity, envIntensity]);
+
+  // Camera Viewpoint Switcher
+  const setCameraView = (view: 'front' | 'side' | 'three-quarter' | 'top' | 'bottom') => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (view === 'front') {
+      cam.position.set(0, 0.15, 3.2);
+    } else if (view === 'side') {
+      cam.position.set(3.2, 0.15, 0);
+    } else if (view === 'three-quarter') {
+      cam.position.set(2.2, 1.2, 2.2);
+    } else if (view === 'top') {
+      cam.position.set(0, 3.4, 0.001);
+    } else if (view === 'bottom') {
+      cam.position.set(0, -3.4, 0.001);
+    }
+    ctrl.target.set(0, 0, 0);
+    ctrl.update();
     if (canMeshRef.current) {
       canMeshRef.current.rotation.set(0, 0, 0);
     }
+  };
+
+  // Reset Camera View
+  const handleResetCamera = () => {
+    setCameraView('front');
   };
 
   return (
@@ -459,8 +686,8 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
       {/* Top Header */}
       <header className="viewer-header">
         <div className="viewer-title-group">
-          <span className="viewer-badge">PHASE 1.2</span>
-          <h1 className="viewer-title">Three.js Real-Time Asset Validation</h1>
+          <span className="viewer-badge">PHASE 1.3</span>
+          <h1 className="viewer-title">PBR Material Pipeline & Texture Optimization</h1>
         </div>
         <div className="viewer-actions">
           <button className="viewer-btn" onClick={handleResetCamera}>
@@ -479,30 +706,102 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
 
       {/* Floating Controls Panel */}
       <div className="viewer-controls-panel">
-        <div className="controls-heading">Material & Shader Config</div>
-
+        <div className="controls-heading">1. Product Selection</div>
         <div className="control-group">
-          <label className="control-label" htmlFor="material-select">
-            <span>Configuration Mode</span>
-          </label>
+          <div className="button-group">
+            <button
+              className={`button-group-btn ${product === 'original' ? 'active' : ''}`}
+              onClick={() => setProduct('original')}
+            >
+              Classic Coke
+            </button>
+            <button
+              className={`button-group-btn ${product === 'diet' ? 'active' : ''}`}
+              onClick={() => setProduct('diet')}
+            >
+              Diet Coke
+            </button>
+            <button
+              className={`button-group-btn ${product === 'zero' ? 'active' : ''}`}
+              onClick={() => setProduct('zero')}
+            >
+              Zero Sugar
+            </button>
+          </div>
+        </div>
+
+        <div className="controls-heading">2. Material Strategy</div>
+        <div className="control-group">
           <select
             id="material-select"
             className="material-select"
-            value={materialMode}
-            onChange={(e) => setMaterialMode(e.target.value as MaterialMode)}
+            value={strategy}
+            onChange={(e) => setStrategy(e.target.value as MaterialStrategy)}
           >
-            <option value="derived-dual-pbr">Config C: Derived Dual-PBR (Recommended)</option>
-            <option value="default-gltf">Config A: Default glTF (Metallic 0.85)</option>
-            <option value="uniform-lacquer">Config B: Uniform Lacquer (Clearcoat)</option>
-            <option value="debug-normals">Debug: Tangent Normals</option>
+            <option value="config-a-baseline">Config A: Baseline (Preferred Sheen)</option>
+            <option value="config-a-enhanced">Config A: Enhanced Physical PBR</option>
+            <option value="dual-material-groups">Dual-Material: Body vs Exposed Metal</option>
+            <option value="mask-driven-pbr">Mask-Driven: Pre-baked Metallic Mask</option>
+            <option value="unlit-base-color">Diagnostic: Unlit Base Color (Test A)</option>
+            <option value="uv-checker">Diagnostic: Numbered UV Checkerboard</option>
+            <option value="debug-normals">Debug: Tangent Normals Map</option>
             <option value="debug-roughness">Debug: Roughness Channel (G)</option>
-            <option value="debug-metalness">Debug: Derived Metalness Mask</option>
+            <option value="debug-metalness">Debug: Metallic Channel</option>
           </select>
         </div>
 
+        <div className="controls-heading">3. Lighting Environment</div>
+        <div className="control-group">
+          <div className="button-group">
+            <button
+              className={`button-group-btn ${lightingPreset === 'studio' ? 'active' : ''}`}
+              onClick={() => setLightingPreset('studio')}
+            >
+              Studio Rig
+            </button>
+            <button
+              className={`button-group-btn ${lightingPreset === 'neutral' ? 'active' : ''}`}
+              onClick={() => setLightingPreset('neutral')}
+            >
+              Neutral Soft
+            </button>
+            <button
+              className={`button-group-btn ${lightingPreset === 'directional' ? 'active' : ''}`}
+              onClick={() => setLightingPreset('directional')}
+            >
+              High Contrast
+            </button>
+          </div>
+        </div>
+
+        <div className="controls-heading">4. Texture Resolution Tier</div>
+        <div className="control-group">
+          <div className="button-group">
+            <button
+              className={`button-group-btn ${textureTier === '4k' ? 'active' : ''}`}
+              onClick={() => setTextureTier('4k')}
+            >
+              4K Source
+            </button>
+            <button
+              className={`button-group-btn ${textureTier === '2k' ? 'active' : ''}`}
+              onClick={() => setTextureTier('2k')}
+            >
+              2K Desktop
+            </button>
+            <button
+              className={`button-group-btn ${textureTier === '1k' ? 'active' : ''}`}
+              onClick={() => setTextureTier('1k')}
+            >
+              1K Mobile
+            </button>
+          </div>
+        </div>
+
+        <div className="controls-heading">5. Sliders & Overlays</div>
         <div className="control-group">
           <label className="control-label">
-            <span>Lighting Multiplier</span>
+            <span>Light Intensity</span>
             <span>{lightIntensity.toFixed(1)}x</span>
           </label>
           <input
@@ -550,12 +849,45 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
             />
             <span>Auto-Rotate Mesh</span>
           </label>
+
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={disableNormalMap}
+              onChange={(e) => setDisableNormalMap(e.target.checked)}
+            />
+            <span>Disable Normal Map (Test E)</span>
+          </label>
+
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={disableRoughnessMap}
+              onChange={(e) => setDisableRoughnessMap(e.target.checked)}
+            />
+            <span>Disable Roughness/Metal Map (Test F)</span>
+          </label>
+        </div>
+
+        <div className="controls-heading">6. Camera Viewpoints</div>
+        <div className="control-group">
+          <div className="button-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+            <button className="button-group-btn" onClick={() => setCameraView('front')}>Front</button>
+            <button className="button-group-btn" onClick={() => setCameraView('side')}>Side</button>
+            <button className="button-group-btn" onClick={() => setCameraView('three-quarter')}>3/4</button>
+            <button className="button-group-btn" onClick={() => setCameraView('top')}>Top Lid</button>
+            <button className="button-group-btn" onClick={() => setCameraView('bottom')}>Bottom</button>
+            <button className="button-group-btn" onClick={handleResetCamera}>Reset</button>
+          </div>
         </div>
       </div>
 
       {/* Telemetry HUD (Bottom Left) */}
       <div className="viewer-telemetry-hud">
-        <div className="hud-header">Real-Time WebGL Telemetry</div>
+        <div className="hud-header">
+          <span>Real-Time WebGL Telemetry</span>
+          <span style={{ color: '#a1a1aa' }}>Tier: {textureTier.toUpperCase()}</span>
+        </div>
         <div className="hud-grid">
           <div className="hud-item">
             <span className="hud-label">FPS</span>
@@ -571,15 +903,15 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
           </div>
           <div className="hud-item">
             <span className="hud-label">Draw Calls</span>
-            <span className="hud-value">{telemetry.drawCalls || 2}</span>
+            <span className="hud-value">{strategy === 'dual-material-groups' ? 3 : 2}</span>
+          </div>
+          <div className="hud-item">
+            <span className="hud-label">Est. VRAM Footprint</span>
+            <span className="hud-value">{telemetry.estimatedVramMb} MB</span>
           </div>
           <div className="hud-item">
             <span className="hud-label">GLB Load Time</span>
             <span className="hud-value">{telemetry.loadTimeMs} ms</span>
-          </div>
-          <div className="hud-item">
-            <span className="hud-label">GPU Textures</span>
-            <span className="hud-value">{telemetry.texturesCount}</span>
           </div>
           <div className="hud-item" style={{ gridColumn: 'span 2' }}>
             <span className="hud-label">Dimensions (W × H × D)</span>
@@ -592,7 +924,7 @@ export function AssetValidationViewer({ onBack }: AssetValidationViewerProps) {
       {loading && (
         <div className="viewer-loading-overlay">
           <div className="viewer-spinner" />
-          <div className="viewer-loading-text">Loading coke-can.glb into Three.js...</div>
+          <div className="viewer-loading-text">Loading canonical Coca-Cola assets...</div>
         </div>
       )}
     </div>

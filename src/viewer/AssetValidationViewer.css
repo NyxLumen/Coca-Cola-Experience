@@ -35,8 +35,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(11, 11, 12, 0.75);
-  backdrop-filter: blur(12px);
+  background: rgba(11, 11, 12, 0.82);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 10;
 }
@@ -104,16 +104,18 @@
 /* Floating controls panel */
 .viewer-controls-panel {
   position: absolute;
-  top: 72px;
-  right: 20px;
-  width: 320px;
-  background: rgba(15, 15, 18, 0.85);
-  backdrop-filter: blur(16px);
+  top: 68px;
+  right: 18px;
+  width: 330px;
+  max-height: calc(100dvh - 86px);
+  overflow-y: auto;
+  background: rgba(14, 14, 18, 0.88);
+  backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1.15rem;
   z-index: 10;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
 }
 
 .controls-heading {
@@ -121,12 +123,14 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #71717a;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.65rem;
   font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 0.35rem;
 }
 
 .control-group {
-  margin-bottom: 1.1rem;
+  margin-bottom: 0.95rem;
 }
 
 .control-label {
@@ -134,7 +138,8 @@
   justify-content: space-between;
   font-size: 0.8125rem;
   color: #d4d4d8;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-weight: 500;
 }
 
 .control-label span:last-child {
@@ -143,10 +148,44 @@
   color: #a1a1aa;
 }
 
+/* Tab bar / Button group */
+.button-group {
+  display: flex;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.button-group-btn {
+  flex: 1;
+  padding: 0.4rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.button-group-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.button-group-btn.active {
+  background: rgba(244, 0, 9, 0.2);
+  border-color: #f40009;
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .material-select {
   width: 100%;
-  padding: 0.5rem 0.65rem;
-  background: rgba(24, 24, 27, 0.9);
+  padding: 0.45rem 0.6rem;
+  background: rgba(24, 24, 27, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   color: #ffffff;
@@ -173,7 +212,7 @@
   cursor: pointer;
   font-size: 0.8125rem;
   color: #d4d4d8;
-  margin-top: 0.5rem;
+  margin-top: 0.4rem;
 }
 
 .checkbox-row input {
@@ -184,11 +223,11 @@
 /* Telemetry HUD (Bottom Left) */
 .viewer-telemetry-hud {
   position: absolute;
-  bottom: 20px;
-  left: 20px;
-  width: 290px;
-  background: rgba(11, 11, 14, 0.82);
-  backdrop-filter: blur(14px);
+  bottom: 18px;
+  left: 18px;
+  width: 320px;
+  background: rgba(11, 11, 14, 0.86);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   padding: 1rem;
@@ -205,7 +244,9 @@
   text-transform: uppercase;
   margin-bottom: 0.65rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  display: flex;
+  justify-content: space-between;
 }
 
 .hud-grid {
@@ -242,7 +283,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(11, 11, 14, 0.9);
+  background: rgba(11, 11, 14, 0.88);
   display: flex;
   flex-direction: column;
   justify-content: center;
