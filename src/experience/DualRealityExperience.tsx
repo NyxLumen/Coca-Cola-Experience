@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { ExperienceEngine } from './ExperienceEngine';
+import { DEFAULT_COMPOSITOR_CONFIG } from './Compositor';
 import type { CompositorMode, ExperienceConfig, ExperienceTelemetry, TextureTier } from './types';
 import './DualRealityExperience.css';
 
@@ -17,7 +18,7 @@ export function DualRealityExperience({
   const engineRef = useRef<ExperienceEngine | null>(null);
 
   // Experience Configuration States
-  const [mode, setMode] = useState<CompositorMode>('composite');
+  const [mode, setMode] = useState<CompositorMode>('fluid-composite');
   const [mixRatio, setMixRatio] = useState<number>(0.5);
   const [splitPosition, setSplitPosition] = useState<number>(0.5);
   const [feather, setFeather] = useState<number>(0.05);
@@ -26,10 +27,16 @@ export function DualRealityExperience({
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
   const [exposure, setExposure] = useState<number>(1.05);
 
-  // Fluid Tunable States
+  // Fluid Simulation Tunable States
   const [idleEnabled, setIdleEnabled] = useState<boolean>(true);
   const [velocityDissipation, setVelocityDissipation] = useState<number>(0.985);
   const [splatForce, setSplatForce] = useState<number>(4500.0);
+
+  // Phase 2C Revised Compositor Tunables (Refraction Removed)
+  const [chromaticAberration, setChromaticAberration] = useState<number>(DEFAULT_COMPOSITOR_CONFIG.chromaticAberration);
+  const [densityThreshold, setDensityThreshold] = useState<number>(DEFAULT_COMPOSITOR_CONFIG.densityThreshold);
+  const [densityFeather, setDensityFeather] = useState<number>(DEFAULT_COMPOSITOR_CONFIG.densityFeather);
+  const [boundaryNoiseStrength, setBoundaryNoiseStrength] = useState<number>(DEFAULT_COMPOSITOR_CONFIG.boundaryNoiseStrength);
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<ExperienceTelemetry>({
@@ -63,6 +70,12 @@ export function DualRealityExperience({
       velocityDissipation,
       splatForce,
     },
+    compositorConfig: {
+      chromaticAberration,
+      densityThreshold,
+      densityFeather,
+      boundaryNoiseStrength,
+    },
   });
 
   // Initialize Experience Engine outside React's render loop
@@ -94,9 +107,16 @@ export function DualRealityExperience({
       if (state.textureTier !== undefined) setTextureTier(state.textureTier);
       if (state.autoRotate !== undefined) setAutoRotate(state.autoRotate);
       if (state.exposure !== undefined) setExposure(state.exposure);
+
       if (state.fluidConfig?.idleEnabled !== undefined) setIdleEnabled(state.fluidConfig.idleEnabled);
       if (state.fluidConfig?.velocityDissipation !== undefined) setVelocityDissipation(state.fluidConfig.velocityDissipation);
       if (state.fluidConfig?.splatForce !== undefined) setSplatForce(state.fluidConfig.splatForce);
+
+      if (state.compositorConfig?.chromaticAberration !== undefined) setChromaticAberration(state.compositorConfig.chromaticAberration);
+      if (state.compositorConfig?.densityThreshold !== undefined) setDensityThreshold(state.compositorConfig.densityThreshold);
+      if (state.compositorConfig?.densityFeather !== undefined) setDensityFeather(state.compositorConfig.densityFeather);
+      if (state.compositorConfig?.boundaryNoiseStrength !== undefined) setBoundaryNoiseStrength(state.compositorConfig.boundaryNoiseStrength);
+
       engine.setConfig(state);
     };
 
@@ -134,6 +154,13 @@ export function DualRealityExperience({
       if (patch.fluidConfig.splatForce !== undefined) setSplatForce(patch.fluidConfig.splatForce);
     }
 
+    if (patch.compositorConfig) {
+      if (patch.compositorConfig.chromaticAberration !== undefined) setChromaticAberration(patch.compositorConfig.chromaticAberration);
+      if (patch.compositorConfig.densityThreshold !== undefined) setDensityThreshold(patch.compositorConfig.densityThreshold);
+      if (patch.compositorConfig.densityFeather !== undefined) setDensityFeather(patch.compositorConfig.densityFeather);
+      if (patch.compositorConfig.boundaryNoiseStrength !== undefined) setBoundaryNoiseStrength(patch.compositorConfig.boundaryNoiseStrength);
+    }
+
     if (engineRef.current) {
       engineRef.current.setConfig(patch);
     }
@@ -160,7 +187,7 @@ export function DualRealityExperience({
       <header className="experience-header">
         <div className="experience-title-group">
           <span className="brand-eyebrow">Coca-Cola Continuous Experience</span>
-          <h1 className="experience-title">Dual-Reality & GPU Fluid Engine</h1>
+          <h1 className="experience-title">Clean Fluid-Driven Compositor</h1>
         </div>
 
         <div className="header-actions">
@@ -174,7 +201,7 @@ export function DualRealityExperience({
               Phase 0 Concept
             </button>
           )}
-          <span className="phase-pill">Phase 2B: GPU Fluid Simulation</span>
+          <span className="phase-pill">Phase 2C Revised</span>
         </div>
       </header>
 
@@ -186,9 +213,7 @@ export function DualRealityExperience({
         </div>
         <div className="telemetry-row">
           <span>FPS / Delta:</span>
-          <span
-            className={`telemetry-val ${telemetry.fps >= 55 ? 'fps-good' : ''}`}
-          >
+          <span className={`telemetry-val ${telemetry.fps >= 55 ? 'fps-good' : ''}`}>
             {telemetry.fps} fps ({telemetry.frameTimeMs} ms)
           </span>
         </div>
@@ -205,20 +230,16 @@ export function DualRealityExperience({
         {telemetry.fluid && (
           <>
             <div className="telemetry-row">
-              <span>Fluid Grid (Sim/Dye):</span>
+              <span>Fluid Grid:</span>
               <span className="telemetry-val fluid-stat">
                 {telemetry.fluid.simWidth}×{telemetry.fluid.simHeight} / {telemetry.fluid.dyeWidth}×{telemetry.fluid.dyeHeight}
               </span>
             </div>
             <div className="telemetry-row">
-              <span>Fluid Passes:</span>
+              <span>Chroma Fringe:</span>
               <span className="telemetry-val fluid-stat">
-                {telemetry.fluid.passesPerFrame} passes ({telemetry.fluid.jacobiIterations} iters)
+                {(chromaticAberration * 1000).toFixed(1)}m
               </span>
-            </div>
-            <div className="telemetry-row">
-              <span>Fluid VRAM:</span>
-              <span className="telemetry-val fluid-stat">~{telemetry.fluid.gpuMemoryEstMb} MB</span>
             </div>
           </>
         )}
@@ -231,25 +252,25 @@ export function DualRealityExperience({
       {/* Floating Control Panel */}
       <nav className="experience-control-panel">
         <div className="mode-selector-group">
-          <div className="mode-section-label">Presentation & Baseline Modes (Phase 2A)</div>
+          <div className="mode-section-label">Primary Presentation & Baseline Modes</div>
           <div className="mode-selector">
             <button
-              className={`mode-btn ${mode === 'composite' ? 'active' : ''}`}
-              onClick={() => updateConfig({ mode: 'composite' })}
+              className={`mode-btn ${mode === 'fluid-composite' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-composite' })}
             >
-              Composite Slider
+              🌊 Fluid Liquid Reveal (Clean)
             </button>
             <button
               className={`mode-btn ${mode === 'reality-a' ? 'active' : ''}`}
               onClick={() => updateConfig({ mode: 'reality-a' })}
             >
-              100% Reality A
+              100% Reality A (Original)
             </button>
             <button
               className={`mode-btn ${mode === 'reality-b' ? 'diet-active' : ''}`}
               onClick={() => updateConfig({ mode: 'reality-b' })}
             >
-              100% Reality B
+              100% Reality B (Diet)
             </button>
             <button
               className={`mode-btn ${mode === 'side-by-side' ? 'active' : ''}`}
@@ -258,22 +279,46 @@ export function DualRealityExperience({
               Side-by-Side Split
             </button>
             <button
-              className={`mode-btn ${mode === 'organic-mask' ? 'active' : ''}`}
-              onClick={() => updateConfig({ mode: 'organic-mask' })}
+              className={`mode-btn ${mode === 'composite' ? 'active' : ''}`}
+              onClick={() => updateConfig({ mode: 'composite' })}
             >
-              Organic Noise
-            </button>
-            <button
-              className={`mode-btn ${mode === 'fluid-reveal-preview' ? 'fluid-active' : ''}`}
-              onClick={() => updateConfig({ mode: 'fluid-reveal-preview' })}
-            >
-              Fluid Reveal Preview
+              Static Slider
             </button>
           </div>
         </div>
 
         <div className="mode-selector-group">
-          <div className="mode-section-label">GPU Fluid Simulation Diagnostics (Phase 2B)</div>
+          <div className="mode-section-label">Phase 2C Optical & Compositor Diagnostics</div>
+          <div className="mode-selector">
+            <button
+              className={`mode-btn ${mode === 'debug-reveal-mask' ? 'active' : ''}`}
+              onClick={() => updateConfig({ mode: 'debug-reveal-mask' })}
+            >
+              Reveal Mask
+            </button>
+            <button
+              className={`mode-btn ${mode === 'debug-transition-boundary' ? 'active' : ''}`}
+              onClick={() => updateConfig({ mode: 'debug-transition-boundary' })}
+            >
+              Boundary Zone
+            </button>
+            <button
+              className={`mode-btn ${mode === 'debug-chromatic-aberration' ? 'active' : ''}`}
+              onClick={() => updateConfig({ mode: 'debug-chromatic-aberration' })}
+            >
+              Chromatic Aberration
+            </button>
+            <button
+              className={`mode-btn ${mode === 'debug-density-threshold' ? 'active' : ''}`}
+              onClick={() => updateConfig({ mode: 'debug-density-threshold' })}
+            >
+              Density Threshold
+            </button>
+          </div>
+        </div>
+
+        <div className="mode-selector-group">
+          <div className="mode-section-label">Phase 2B Navier-Stokes Fluid Diagnostics</div>
           <div className="mode-selector">
             <button
               className={`mode-btn ${mode === 'fluid-velocity-magnitude' ? 'fluid-active' : ''}`}
@@ -304,12 +349,6 @@ export function DualRealityExperience({
               onClick={() => updateConfig({ mode: 'fluid-pressure' })}
             >
               Pressure
-            </button>
-            <button
-              className={`mode-btn ${mode === 'debug-mask' ? 'active' : ''}`}
-              onClick={() => updateConfig({ mode: 'debug-mask' })}
-            >
-              Mask Grayscale
             </button>
           </div>
         </div>
@@ -344,8 +383,79 @@ export function DualRealityExperience({
             </select>
           </div>
 
-          {/* Contextual Sliders */}
-          {mode === 'side-by-side' ? (
+          {/* Contextual Sliders for Phase 2C Revised */}
+          {mode === 'fluid-composite' ? (
+            <>
+              <div className="slider-group">
+                <label className="slider-label">Threshold</label>
+                <input
+                  type="range"
+                  min="0.04"
+                  max="0.45"
+                  step="0.01"
+                  value={densityThreshold}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setDensityThreshold(val);
+                    updateConfig({ compositorConfig: { densityThreshold: val } });
+                  }}
+                  className="slider-input"
+                />
+                <span className="slider-val">{densityThreshold.toFixed(2)}</span>
+              </div>
+              <div className="slider-group">
+                <label className="slider-label">Feather</label>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="0.45"
+                  step="0.01"
+                  value={densityFeather}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setDensityFeather(val);
+                    updateConfig({ compositorConfig: { densityFeather: val } });
+                  }}
+                  className="slider-input"
+                />
+                <span className="slider-val">{densityFeather.toFixed(2)}</span>
+              </div>
+              <div className="slider-group">
+                <label className="slider-label">Chroma</label>
+                <input
+                  type="range"
+                  min="0.0"
+                  max="0.02"
+                  step="0.001"
+                  value={chromaticAberration}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setChromaticAberration(val);
+                    updateConfig({ compositorConfig: { chromaticAberration: val } });
+                  }}
+                  className="slider-input"
+                />
+                <span className="slider-val">{(chromaticAberration * 1000).toFixed(1)}m</span>
+              </div>
+              <div className="slider-group">
+                <label className="slider-label">Inertia</label>
+                <input
+                  type="range"
+                  min="0.9"
+                  max="0.998"
+                  step="0.001"
+                  value={velocityDissipation}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setVelocityDissipation(val);
+                    updateConfig({ fluidConfig: { velocityDissipation: val } });
+                  }}
+                  className="slider-input"
+                />
+                <span className="slider-val">{velocityDissipation.toFixed(3)}</span>
+              </div>
+            </>
+          ) : mode === 'side-by-side' ? (
             <div className="slider-group">
               <label className="slider-label">Split Position</label>
               <input
@@ -358,24 +468,6 @@ export function DualRealityExperience({
                 className="slider-input"
               />
               <span className="slider-val">{(splitPosition * 100).toFixed(0)}%</span>
-            </div>
-          ) : mode.startsWith('fluid-') ? (
-            <div className="slider-group">
-              <label className="slider-label">Velocity Inertia</label>
-              <input
-                type="range"
-                min="0.9"
-                max="0.998"
-                step="0.001"
-                value={velocityDissipation}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setVelocityDissipation(val);
-                  updateConfig({ fluidConfig: { velocityDissipation: val } });
-                }}
-                className="slider-input"
-              />
-              <span className="slider-val">{velocityDissipation.toFixed(3)}</span>
             </div>
           ) : (
             <div className="slider-group">
@@ -390,40 +482,6 @@ export function DualRealityExperience({
                 className="slider-input"
               />
               <span className="slider-val">{(mixRatio * 100).toFixed(0)}%</span>
-            </div>
-          )}
-
-          {mode.startsWith('fluid-') ? (
-            <div className="slider-group">
-              <label className="slider-label">Force</label>
-              <input
-                type="range"
-                min="1000"
-                max="10000"
-                step="500"
-                value={splatForce}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setSplatForce(val);
-                  updateConfig({ fluidConfig: { splatForce: val } });
-                }}
-                className="slider-input"
-              />
-              <span className="slider-val">{splatForce.toFixed(0)}</span>
-            </div>
-          ) : (
-            <div className="slider-group">
-              <label className="slider-label">Feather</label>
-              <input
-                type="range"
-                min="0.001"
-                max="0.25"
-                step="0.005"
-                value={feather}
-                onChange={(e) => updateConfig({ feather: parseFloat(e.target.value) })}
-                className="slider-input"
-              />
-              <span className="slider-val">{(feather * 100).toFixed(1)}%</span>
             </div>
           )}
         </div>

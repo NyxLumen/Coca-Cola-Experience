@@ -1,5 +1,13 @@
 import * as THREE from 'three';
-import type { CompositorMode } from './types';
+import type { CompositorConfig, CompositorMode } from './types';
+
+export const DEFAULT_COMPOSITOR_CONFIG: CompositorConfig = {
+  densityThreshold: 0.16,
+  densityFeather: 0.22,
+  chromaticAberration: 0.008,
+  boundaryNoiseStrength: 0.02,
+  boundaryNoiseScale: 6.0,
+};
 
 const COMPOSITOR_VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
@@ -27,9 +35,16 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
   uniform float uTime;
   uniform vec2 uResolution;
 
+  // Phase 2C Revised Tunable Compositor Parameters (Refraction Removed)
+  uniform float uDensityThreshold;
+  uniform float uDensityFeather;
+  uniform float uChromaticAberration;
+  uniform float uBoundaryNoiseStrength;
+  uniform float uBoundaryNoiseScale;
+
   varying vec2 vUv;
 
-  // 2D Simplex Noise for Phase 2A Baseline Organic Fluid Boundary
+  // 2D Simplex Noise for Subtle Micro-Boundary Perturbation
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -78,97 +93,163 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
   }
 
   void main() {
-    // Debug Modes for Real-Time GPU Fluid Inspection
-    if (uMode == 7) {
-      // Fluid Density
-      vec4 dens = texture2D(tFluidDensity, vUv);
-      gl_FragColor = vec4(dens.rgb, 1.0);
+    float aspect = uResolution.x / max(uResolution.y, 1.0);
+
+    // =========================================================================
+    // 1. CLEAN FLUID DENSITY-DRIVEN REVEAL MASK (Preserving Phase 2B Dynamics)
+    // =========================================================================
+    vec4 fluidD = texture2D(tFluidDensity, vUv);
+    float rawDensity = length(fluidD.rgb);
+
+    // Smoothstep threshold curve
+    float halfFeather = max(uDensityFeather * 0.5, 0.005);
+    float baseMask = smoothstep(uDensityThreshold - halfFeather, uDensityThreshold + halfFeather, rawDensity);
+
+    // Transition boundary factor (peaks at mask = 0.5, zero at 0.0 and 1.0)
+    float boundary = 4.0 * baseMask * (1.0 - baseMask);
+
+    // Subtle micro-organic boundary perturbation (if enabled)
+    float mask = baseMask;
+    if (uBoundaryNoiseStrength > 0.001) {
+      vec2 noiseUv = vUv;
+      noiseUv.x *= aspect;
+      float noise = fbm(noiseUv * uBoundaryNoiseScale);
+      mask = clamp(baseMask + boundary * (noise - 0.5) * uBoundaryNoiseStrength, 0.0, 1.0);
+    }
+
+    // Active boundary for localized optical fringe
+    float activeBoundary = 4.0 * mask * (1.0 - mask);
+
+    // =========================================================================
+    // 2. RESTRAINED, SUBTLE CHROMATIC ABERRATION (Zero Refraction / Zero Warp)
+    // =========================================================================
+    // The can geometry NEVER warps or bends. Both realities sample at identical vUv.
+    // Subtle spectral fringe appears strictly on the fluid meniscus while moving.
+    vec2 fluidVel = texture2D(tFluidVelocity, vUv).xy;
+    float speed = length(fluidVel);
+
+    vec4 colA;
+    vec4 colB;
+
+    float chromaWeight = activeBoundary * smoothstep(0.0, 30.0, speed) * uChromaticAberration;
+    vec2 disp = vec2(chromaWeight * 0.0015 / aspect, 0.0);
+
+    if (chromaWeight > 0.00005) {
+      // Subtle localized micro-dispersion along active meniscus
+      float rA = texture2D(tRealityA, clamp(vUv - disp, vec2(0.001), vec2(0.999))).r;
+      float gA = texture2D(tRealityA, vUv).g;
+      float bA = texture2D(tRealityA, clamp(vUv + disp, vec2(0.001), vec2(0.999))).b;
+      colA = vec4(rA, gA, bA, 1.0);
+
+      float rB = texture2D(tRealityB, clamp(vUv - disp, vec2(0.001), vec2(0.999))).r;
+      float gB = texture2D(tRealityB, vUv).g;
+      float bB = texture2D(tRealityB, clamp(vUv + disp, vec2(0.001), vec2(0.999))).b;
+      colB = vec4(rB, gB, bB, 1.0);
+    } else {
+      // Completely undistorted sampling: exact 1:1 spatial lock
+      colA = texture2D(tRealityA, vUv);
+      colB = texture2D(tRealityB, vUv);
+    }
+
+    // =========================================================================
+    // 3. DIAGNOSTIC DEBUG MODES
+    // =========================================================================
+    if (uMode == 6) {
+      // Reveal Mask Grayscale Diagnostic
+      gl_FragColor = vec4(vec3(mask), 1.0);
+      return;
+    } else if (uMode == 7) {
+      // Transition Boundary Zone Diagnostic
+      gl_FragColor = vec4(vec3(activeBoundary), 1.0);
       return;
     } else if (uMode == 8) {
-      // Velocity Vector Field (normalized direction mapped to RGB)
-      vec2 vel = texture2D(tFluidVelocity, vUv).xy * 0.02;
-      vec3 col = vec3(0.5 + vel.x, 0.5 + vel.y, 0.5 - 0.5 * (vel.x + vel.y));
-      gl_FragColor = vec4(col, 1.0);
+      // Isolated Chromatic Aberration Dispersion Delta
+      vec4 colAUndisp = texture2D(tRealityA, vUv);
+      vec3 chromaDelta = abs(colA.rgb - colAUndisp.rgb) * 20.0;
+      gl_FragColor = vec4(chromaDelta, 1.0);
       return;
     } else if (uMode == 9) {
-      // Velocity Magnitude Heatmap
-      vec2 vel = texture2D(tFluidVelocity, vUv).xy;
-      float speed = length(vel) * 0.025;
-      gl_FragColor = vec4(turbo(speed), 1.0);
-      return;
-    } else if (uMode == 10) {
-      // Divergence Heatmap (Red: expansion, Blue: compression)
-      float div = texture2D(tFluidDivergence, vUv).x * 20.0;
-      vec3 col = vec3(max(div, 0.0), 0.0, max(-div, 0.0));
-      gl_FragColor = vec4(col, 1.0);
+      // Density Threshold Diagnostic
+      float overThresh = step(uDensityThreshold, rawDensity);
+      vec3 threshCol = (overThresh > 0.5)
+        ? vec3(0.1, 0.9, 0.3) * rawDensity * 2.0
+        : vec3(0.9, 0.2, 0.2) * rawDensity * 2.0;
+      gl_FragColor = vec4(threshCol, 1.0);
       return;
     } else if (uMode == 11) {
-      // Pressure Field (Cyan: positive, Magenta: negative)
+      // Velocity Speed Heatmap (Phase 2B Fluid Diagnostic)
+      gl_FragColor = vec4(turbo(speed * 0.025), 1.0);
+      return;
+    } else if (uMode == 12) {
+      // Velocity Vector Field (Phase 2B Fluid Diagnostic)
+      vec2 velNorm = fluidVel * 0.02;
+      vec3 col = vec3(0.5 + velNorm.x, 0.5 + velNorm.y, 0.5 - 0.5 * (velNorm.x + velNorm.y));
+      gl_FragColor = vec4(col, 1.0);
+      return;
+    } else if (uMode == 13) {
+      // Fluid Density Field (Phase 2B Fluid Diagnostic)
+      gl_FragColor = vec4(fluidD.rgb, 1.0);
+      return;
+    } else if (uMode == 14) {
+      // Divergence Heatmap (Phase 2B Fluid Diagnostic)
+      float div = texture2D(tFluidDivergence, vUv).x * 20.0;
+      gl_FragColor = vec4(max(div, 0.0), 0.0, max(-div, 0.0), 1.0);
+      return;
+    } else if (uMode == 15) {
+      // Pressure Field (Phase 2B Fluid Diagnostic)
       float p = texture2D(tFluidPressure, vUv).x * 10.0;
-      vec3 col = (p >= 0.0)
+      vec3 pCol = (p >= 0.0)
         ? mix(vec3(0.0), vec3(0.1, 0.8, 0.9), clamp(p, 0.0, 1.0))
         : mix(vec3(0.0), vec3(0.9, 0.2, 0.7), clamp(-p, 0.0, 1.0));
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(pCol, 1.0);
       return;
     }
 
-    vec4 colA = texture2D(tRealityA, vUv);
-    vec4 colB = texture2D(tRealityB, vUv);
-
-    float mask = 0.0;
-    float divider = 0.0;
-
+    // =========================================================================
+    // 4. PRESENTATION MODES (Baseline & Clean Density Composite)
+    // =========================================================================
     if (uMode == 1) {
-      // 100% Reality A (Original)
-      mask = 0.0;
+      // 100% Reality A (Original Coke)
+      gl_FragColor = texture2D(tRealityA, vUv);
+      return;
     } else if (uMode == 2) {
-      // 100% Reality B (Diet)
-      mask = 1.0;
+      // 100% Reality B (Diet Coke)
+      gl_FragColor = texture2D(tRealityB, vUv);
+      return;
     } else if (uMode == 3) {
-      // Side-by-Side diagnostic split with 1px indicator line
+      // Side-by-Side Diagnostic Split Screen
       float pixelWidth = 1.0 / max(uResolution.x, 1.0);
       float distToSplit = abs(vUv.x - uSplitPosition);
-      divider = 1.0 - smoothstep(0.0, pixelWidth * 1.5, distToSplit);
-      mask = step(uSplitPosition, vUv.x);
+      float divider = 1.0 - smoothstep(0.0, pixelWidth * 1.5, distToSplit);
+      float splitMask = step(uSplitPosition, vUv.x);
+      vec4 splitCol = mix(texture2D(tRealityA, vUv), texture2D(tRealityB, vUv), splitMask);
+      if (divider > 0.0) {
+        splitCol = mix(splitCol, vec4(1.0, 1.0, 1.0, 0.85), divider);
+      }
+      gl_FragColor = splitCol;
+      return;
     } else if (uMode == 4) {
-      // Organic test mask simulating fluid droplet / boundary reveal
-      vec2 aspectUv = vUv;
-      aspectUv.x *= (uResolution.x / max(uResolution.y, 1.0));
-
-      float noise = fbm(aspectUv * uOrganicScale + vec2(uTime * 0.12, uTime * 0.08));
+      // Phase 2A Procedural Organic Simplex Mask (Baseline)
+      vec2 noiseUv = vUv;
+      noiseUv.x *= aspect;
+      float noise = fbm(noiseUv * uOrganicScale + vec2(uTime * 0.12, uTime * 0.08));
       float dist = distance(vUv, vec2(0.5, 0.45)) + noise * 0.22;
       float threshold = uMixRatio * 1.25;
       float featherVal = max(uFeather, 0.01);
-      mask = smoothstep(threshold - featherVal, threshold + featherVal, dist);
-      mask = 1.0 - mask;
-    } else if (uMode == 5) {
-      // Debug Mask Visualizer
-      float featherVal = max(uFeather, 0.001);
-      mask = smoothstep(uMixRatio - featherVal, uMixRatio + featherVal, vUv.x);
-      gl_FragColor = vec4(vec3(mask), 1.0);
+      float simMask = 1.0 - smoothstep(threshold - featherVal, threshold + featherVal, dist);
+      gl_FragColor = mix(texture2D(tRealityA, vUv), texture2D(tRealityB, vUv), clamp(simMask, 0.0, 1.0));
       return;
-    } else if (uMode == 6) {
-      // Fluid-Driven Dynamic Reveal Preview
-      // Samples genuine density from the GPU fluid simulation
-      vec4 fluidD = texture2D(tFluidDensity, vUv);
-      float dens = length(fluidD.rgb);
-      mask = clamp(dens, 0.0, 1.0);
-    } else {
-      // Mode 0: Smooth linear / directional composite blend
+    } else if (uMode == 5) {
+      // Phase 2A Static Composite Slider
       float featherVal = max(uFeather, 0.001);
-      float threshold = uMixRatio;
-      mask = smoothstep(threshold - featherVal, threshold + featherVal, vUv.x);
+      float staticMask = smoothstep(uMixRatio - featherVal, uMixRatio + featherVal, vUv.x);
+      gl_FragColor = mix(texture2D(tRealityA, vUv), texture2D(tRealityB, vUv), clamp(staticMask, 0.0, 1.0));
+      return;
     }
 
-    vec4 finalColor = mix(colA, colB, clamp(mask, 0.0, 1.0));
-
-    // Overlay divider line if in side-by-side mode
-    if (uMode == 3 && divider > 0.0) {
-      vec4 lineCol = vec4(1.0, 1.0, 1.0, 0.85);
-      finalColor = mix(finalColor, lineCol, divider);
-    }
-
-    gl_FragColor = finalColor;
+    // Mode 0: Primary Clean Fluid-Driven Transition Composite
+    // C = mix(RealityA, RealityB, RevealMask) - Seamless, No Warping, Natural Fluid Shape
+    gl_FragColor = mix(colA, colB, clamp(mask, 0.0, 1.0));
   }
 `;
 
@@ -179,6 +260,7 @@ export class Compositor {
   public quadCamera: THREE.OrthographicCamera;
   public material: THREE.ShaderMaterial;
   private quadMesh: THREE.Mesh;
+  private config: CompositorConfig = { ...DEFAULT_COMPOSITOR_CONFIG };
 
   constructor(width: number, height: number, dpr: number) {
     const effectiveWidth = Math.max(1, Math.floor(width * dpr));
@@ -216,13 +298,20 @@ export class Compositor {
         tFluidVelocity: { value: null },
         tFluidPressure: { value: null },
         tFluidDivergence: { value: null },
-        uMode: { value: 0 },
+        uMode: { value: 0 }, // 0: fluid-composite (Clean Primary)
         uMixRatio: { value: 0.5 },
         uSplitPosition: { value: 0.5 },
         uFeather: { value: 0.05 },
         uOrganicScale: { value: 4.0 },
         uTime: { value: 0.0 },
         uResolution: { value: new THREE.Vector2(effectiveWidth, effectiveHeight) },
+
+        // Phase 2C Revised Tunables (No Refraction)
+        uDensityThreshold: { value: this.config.densityThreshold },
+        uDensityFeather: { value: this.config.densityFeather },
+        uChromaticAberration: { value: this.config.chromaticAberration },
+        uBoundaryNoiseStrength: { value: this.config.boundaryNoiseStrength },
+        uBoundaryNoiseScale: { value: this.config.boundaryNoiseScale },
       },
       depthTest: false,
       depthWrite: false,
@@ -249,7 +338,7 @@ export class Compositor {
   public setMode(mode: CompositorMode): void {
     let modeInt = 0;
     switch (mode) {
-      case 'composite':
+      case 'fluid-composite':
         modeInt = 0;
         break;
       case 'reality-a':
@@ -264,29 +353,61 @@ export class Compositor {
       case 'organic-mask':
         modeInt = 4;
         break;
-      case 'debug-mask':
+      case 'composite':
         modeInt = 5;
         break;
-      case 'fluid-reveal-preview':
+      case 'debug-reveal-mask':
         modeInt = 6;
         break;
-      case 'fluid-density':
+      case 'debug-transition-boundary':
         modeInt = 7;
         break;
-      case 'fluid-velocity':
+      case 'debug-chromatic-aberration':
         modeInt = 8;
         break;
-      case 'fluid-velocity-magnitude':
+      case 'debug-density-threshold':
         modeInt = 9;
         break;
+      case 'fluid-velocity-magnitude':
+        modeInt = 11;
+        break;
+      case 'fluid-velocity':
+        modeInt = 12;
+        break;
+      case 'fluid-density':
+        modeInt = 13;
+        break;
       case 'fluid-divergence':
-        modeInt = 10;
+        modeInt = 14;
         break;
       case 'fluid-pressure':
-        modeInt = 11;
+        modeInt = 15;
         break;
     }
     this.material.uniforms.uMode.value = modeInt;
+  }
+
+  public setConfig(newConfig: Partial<CompositorConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+    if (newConfig.densityThreshold !== undefined) {
+      this.material.uniforms.uDensityThreshold.value = newConfig.densityThreshold;
+    }
+    if (newConfig.densityFeather !== undefined) {
+      this.material.uniforms.uDensityFeather.value = newConfig.densityFeather;
+    }
+    if (newConfig.chromaticAberration !== undefined) {
+      this.material.uniforms.uChromaticAberration.value = newConfig.chromaticAberration;
+    }
+    if (newConfig.boundaryNoiseStrength !== undefined) {
+      this.material.uniforms.uBoundaryNoiseStrength.value = newConfig.boundaryNoiseStrength;
+    }
+    if (newConfig.boundaryNoiseScale !== undefined) {
+      this.material.uniforms.uBoundaryNoiseScale.value = newConfig.boundaryNoiseScale;
+    }
+  }
+
+  public getConfig(): CompositorConfig {
+    return { ...this.config };
   }
 
   public setMixRatio(ratio: number): void {

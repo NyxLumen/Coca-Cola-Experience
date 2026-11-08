@@ -21,7 +21,7 @@ export class ExperienceEngine {
   public envTexture: THREE.Texture | null = null;
 
   public config: ExperienceConfig = {
-    mode: 'composite',
+    mode: 'fluid-composite',
     mixRatio: 0.5,
     splitPosition: 0.5,
     feather: 0.05,
@@ -199,6 +199,9 @@ export class ExperienceEngine {
     this.compositor.setSplitPosition(this.config.splitPosition);
     this.compositor.setFeather(this.config.feather);
     this.compositor.setOrganicScale(this.config.organicScale);
+    if (this.config.compositorConfig) {
+      this.compositor.setConfig(this.config.compositorConfig);
+    }
   }
 
   public setConfig(newConfig: Partial<ExperienceConfig>): void {
@@ -215,6 +218,10 @@ export class ExperienceEngine {
 
     if (newConfig.fluidConfig && this.fluidSimulation) {
       this.fluidSimulation.setConfig(newConfig.fluidConfig);
+    }
+
+    if (newConfig.compositorConfig && this.compositor) {
+      this.compositor.setConfig(newConfig.compositorConfig);
     }
 
     this.applyConfigToCompositor();
