@@ -49,6 +49,9 @@ export class ExperienceEngine {
   // Constant real-world angular velocity (~27.5 deg/sec)
   private readonly ROTATION_SPEED_RAD_PER_SEC: number = 0.48;
 
+  // Narrowest Deterministic Shadow Synchronization State
+  private shadowNeedsUpdate: boolean = true;
+
   constructor(
     container: HTMLElement,
     initialConfig?: Partial<ExperienceConfig>,
@@ -97,7 +100,7 @@ export class ExperienceEngine {
     this.controls.maxDistance = 6.0;
     this.controls.target.set(0, 0, 0);
     this.controls.addEventListener('change', () => {
-      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowNeedsUpdate = true;
     });
 
     // 4. Asset Manager
@@ -191,9 +194,43 @@ export class ExperienceEngine {
         this.envTextureB
       );
 
+      // Deterministic Shadow & Pipeline Initialization:
+      // 1. Sync initial product transforms across both realities
+      this.realityA.canMesh.position.set(0.0, 0.05, 0.0);
+      this.realityB.canMesh.position.set(0.0, 0.05, 0.0);
+      this.realityA.canMesh.rotation.set(0.06, this.canRotationY, -0.19);
+      this.realityB.canMesh.rotation.set(0.06, this.canRotationY, -0.19);
+
+      // 2. Synchronously update world matrices across the entire scene graph
+      this.camera.updateMatrixWorld(true);
+      this.realityA.scene.updateMatrixWorld(true);
+      this.realityB.scene.updateMatrixWorld(true);
+
+      // 3. Configure shadow cameras and projection bounds
+      this.realityA.keyLight.shadow.camera.updateProjectionMatrix();
+      this.realityB.keyLight.shadow.camera.updateProjectionMatrix();
+
+      // 4. Force initial shadow map generation for Reality A
+      if (this.compositor) {
+        this.renderer.shadowMap.needsUpdate = true;
+        this.renderer.setRenderTarget(this.compositor.targetA);
+        this.renderer.render(this.realityA.scene, this.camera);
+
+        // 5. Force initial shadow map generation for Reality B
+        // (Explicitly re-flagging needsUpdate because Three.js WebGLShadowMap line 378 cleared it after Pass A)
+        this.renderer.shadowMap.needsUpdate = true;
+        this.renderer.setRenderTarget(this.compositor.targetB);
+        this.renderer.render(this.realityB.scene, this.camera);
+
+        // 6. Pre-render initial compositor presentation
+        this.applyConfigToCompositor();
+        this.compositor.render(this.renderer);
+      }
+
+      // 7. Enable final presentation
       this.loadTimeMs = Math.round(performance.now() - startTime);
       this.isReady = true;
-      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowNeedsUpdate = false;
 
       // Start the Continuous Render Loop
       this.startLoop();
@@ -235,6 +272,7 @@ export class ExperienceEngine {
     }
 
     this.applyConfigToCompositor();
+    this.shadowNeedsUpdate = true;
   }
 
   private changeTextureTier(tier: TextureTier): void {
@@ -243,6 +281,7 @@ export class ExperienceEngine {
     const texturesB = this.assetManager.loadProductTextures('diet', tier);
     this.realityA.updateMaterialTextures(texturesA);
     this.realityB.updateMaterialTextures(texturesB);
+    this.shadowNeedsUpdate = true;
   }
 
   public resetCamera(): void {
@@ -250,6 +289,7 @@ export class ExperienceEngine {
     this.camera.lookAt(0, 0, 0);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
+    this.shadowNeedsUpdate = true;
   }
 
   private handleResize = (): void => {
@@ -296,13 +336,20 @@ export class ExperienceEngine {
 
       // Auto-Rotation uses constant real-world angular velocity decoupled from frame rate
       // Guarantees identical 0.48 rad/sec (~27.5 deg/sec) at 60, 70, 90, 100, or 144 FPS
+      let transformChanged = false;
       if (this.config.autoRotate && this.realityA && this.realityB) {
         this.canRotationY += this.ROTATION_SPEED_RAD_PER_SEC * deltaSec;
         this.realityA.canMesh.rotation.y = this.canRotationY;
         this.realityB.canMesh.rotation.y = this.canRotationY;
+        transformChanged = true;
       }
 
-      this.controls.update();
+      const controlsMoved = this.controls.update();
+      if (controlsMoved) {
+        this.shadowNeedsUpdate = true;
+      }
+
+      const shouldUpdateShadows = transformChanged || this.shadowNeedsUpdate;
 
       const currentMode = this.config.mode;
 
@@ -318,14 +365,26 @@ export class ExperienceEngine {
         let callsA = 0;
         let callsB = 0;
 
+        if (shouldUpdateShadows) {
+          // Synchronously update world matrices across both realities before any shadow pass
+          this.realityA.scene.updateMatrixWorld();
+          this.realityB.scene.updateMatrixWorld();
+        }
+
         if (currentMode === 'reality-a') {
           // Optimized Single Reality A Pass: Render Reality A to Target A, bypass Reality B
+          if (shouldUpdateShadows) {
+            this.renderer.shadowMap.needsUpdate = true;
+          }
           this.renderer.setRenderTarget(this.compositor.targetA);
           this.renderer.render(this.realityA.scene, this.camera);
           callsA = this.renderer.info.render.calls;
           callsB = 0;
         } else if (currentMode === 'reality-b') {
           // Optimized Single Reality B Pass: Render Reality B to Target B, bypass Reality A
+          if (shouldUpdateShadows) {
+            this.renderer.shadowMap.needsUpdate = true;
+          }
           this.renderer.setRenderTarget(this.compositor.targetB);
           this.renderer.render(this.realityB.scene, this.camera);
           callsB = this.renderer.info.render.calls;
@@ -333,14 +392,26 @@ export class ExperienceEngine {
         } else {
           // Dual-Reality & Compositor Modes: Render both realities to their respective MSAA targets
           // 1. Pass A: Render Reality A to Target A
+          if (shouldUpdateShadows) {
+            this.renderer.shadowMap.needsUpdate = true;
+          }
           this.renderer.setRenderTarget(this.compositor.targetA);
           this.renderer.render(this.realityA.scene, this.camera);
           callsA = this.renderer.info.render.calls;
 
           // 2. Pass B: Render Reality B to Target B
+          // CRITICAL: Three.js WebGLShadowMap line 378 clears needsUpdate = false after rendering Scene A.
+          // Therefore, we MUST explicitly re-flag needsUpdate = true before rendering Scene B!
+          if (shouldUpdateShadows) {
+            this.renderer.shadowMap.needsUpdate = true;
+          }
           this.renderer.setRenderTarget(this.compositor.targetB);
           this.renderer.render(this.realityB.scene, this.camera);
           callsB = this.renderer.info.render.calls - callsA;
+        }
+
+        if (shouldUpdateShadows) {
+          this.shadowNeedsUpdate = false;
         }
 
         // Pass C: Fullscreen Compositor Render (Blits MSAA targets to screen)

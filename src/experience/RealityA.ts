@@ -17,14 +17,14 @@ export class RealityA {
   private bgTexture: THREE.CanvasTexture;
 
   // Commercial Studio Lighting Rig
-  private keyLight: THREE.DirectionalLight;
-  private fillLight: THREE.DirectionalLight;
-  private rimLightTop: THREE.DirectionalLight;
-  private rimLightFlank: THREE.DirectionalLight;
-  private specularStrip: THREE.DirectionalLight;
-  private backdropSpot: THREE.SpotLight;
-  private ambientLight: THREE.AmbientLight;
-  private stageAmbient: THREE.AmbientLight;
+  public keyLight: THREE.DirectionalLight;
+  public fillLight: THREE.DirectionalLight;
+  public rimLightTop: THREE.DirectionalLight;
+  public rimLightFlank: THREE.DirectionalLight;
+  public specularStrip: THREE.DirectionalLight;
+  public backdropSpot: THREE.SpotLight;
+  public ambientLight: THREE.AmbientLight;
+  public stageAmbient: THREE.AmbientLight;
 
   constructor(
     canonicalGeometry: THREE.BufferGeometry,
