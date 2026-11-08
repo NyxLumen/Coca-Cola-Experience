@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { AssetManager } from './AssetManager';
 import { RealityA } from './RealityA';
 import { RealityB } from './RealityB';
 import { Compositor } from './Compositor';
 import { FluidSimulation } from '../fluid/FluidSimulation';
+import { createStudioEnvironmentMap } from './environments';
 import type { ExperienceConfig, ExperienceTelemetry, TextureTier } from './types';
 
 export class ExperienceEngine {
@@ -18,7 +18,8 @@ export class ExperienceEngine {
   public realityB: RealityB | null = null;
   public compositor: Compositor | null = null;
   public fluidSimulation: FluidSimulation | null = null;
-  public envTexture: THREE.Texture | null = null;
+  public envTextureA: THREE.Texture | null = null;
+  public envTextureB: THREE.Texture | null = null;
 
   public config: ExperienceConfig = {
     mode: 'fluid-composite',
@@ -34,7 +35,7 @@ export class ExperienceEngine {
   private animationFrameId: number | null = null;
   private isDestroyed: boolean = false;
   public isReady: boolean = false;
-  private canRotationY: number = 0;
+  private canRotationY: number = 0.38;
 
   // Telemetry tracking
   public latestTelemetry: ExperienceTelemetry | null = null;
@@ -72,6 +73,8 @@ export class ExperienceEngine {
     this.renderer.toneMappingExposure = this.config.exposure;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.info.autoReset = false;
     this.container.appendChild(this.renderer.domElement);
 
@@ -86,6 +89,9 @@ export class ExperienceEngine {
     this.controls.minDistance = 1.2;
     this.controls.maxDistance = 6.0;
     this.controls.target.set(0, 0, 0);
+    this.controls.addEventListener('change', () => {
+      this.renderer.shadowMap.needsUpdate = true;
+    });
 
     // 4. Asset Manager
     this.assetManager = new AssetManager();
@@ -152,13 +158,9 @@ export class ExperienceEngine {
   private async initPipeline(): Promise<void> {
     const startTime = performance.now();
 
-    // Generate Shared PMREM Studio Environment
-    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-    pmremGenerator.compileEquirectangularShader();
-    const roomEnv = new RoomEnvironment();
-    this.envTexture = pmremGenerator.fromScene(roomEnv, 0.04).texture;
-    pmremGenerator.dispose();
-    roomEnv.dispose();
+    // Generate Dedicated Campaign PMREM Studio Environments
+    this.envTextureA = createStudioEnvironmentMap(this.renderer, 'classic');
+    this.envTextureB = createStudioEnvironmentMap(this.renderer, 'diet');
 
     try {
       const assets = await this.assetManager.loadAll(this.config.textureTier);
@@ -168,22 +170,23 @@ export class ExperienceEngine {
         ? assets.canonicalGeometry.index.count / 3
         : 0;
 
-      // Instantiate Reality A (Original Coke)
+      // Instantiate Reality A (Original Coke) with Warm Cinematic Reflections
       this.realityA = new RealityA(
         assets.canonicalGeometry,
         assets.texturesA,
-        this.envTexture
+        this.envTextureA
       );
 
-      // Instantiate Reality B (Diet Coke) - Reusing Identical Canonical Geometry
+      // Instantiate Reality B (Diet Coke) with High-Clarity Cool Metallic Reflections
       this.realityB = new RealityB(
         assets.canonicalGeometry,
         assets.texturesB,
-        this.envTexture
+        this.envTextureB
       );
 
       this.loadTimeMs = Math.round(performance.now() - startTime);
       this.isReady = true;
+      this.renderer.shadowMap.needsUpdate = true;
 
       // Start the Continuous Render Loop
       this.startLoop();
@@ -286,12 +289,15 @@ export class ExperienceEngine {
         this.canRotationY += 0.008;
         this.realityA.canMesh.rotation.y = this.canRotationY;
         this.realityB.canMesh.rotation.y = this.canRotationY;
+        this.renderer.shadowMap.needsUpdate = true;
       }
 
       this.controls.update();
 
-      // Step GPU Fluid Simulation
-      if (this.fluidSimulation) {
+      const currentMode = this.config.mode;
+
+      // Step GPU Fluid Simulation (only active when fluid transition or diagnostic modes require it)
+      if (this.fluidSimulation && currentMode !== 'reality-a' && currentMode !== 'reality-b') {
         this.fluidSimulation.step(Math.min(delta * 0.001, 0.033));
       }
 
@@ -299,7 +305,6 @@ export class ExperienceEngine {
         // Reset renderer calls count for per-frame metric tracking
         this.renderer.info.reset();
 
-        const currentMode = this.config.mode;
         let callsA = 0;
         let callsB = 0;
 
@@ -410,9 +415,14 @@ export class ExperienceEngine {
       this.compositor = null;
     }
 
-    if (this.envTexture) {
-      this.envTexture.dispose();
-      this.envTexture = null;
+    if (this.envTextureA) {
+      this.envTextureA.dispose();
+      this.envTextureA = null;
+    }
+
+    if (this.envTextureB) {
+      this.envTextureB.dispose();
+      this.envTextureB = null;
     }
 
     if (this.assetManager) {
