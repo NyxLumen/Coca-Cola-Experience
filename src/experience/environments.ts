@@ -419,19 +419,27 @@ export function createStudioEnvironmentMap(
   if (reality === 'classic') {
     envScene.background = new THREE.Color(0x281216);
 
-    // Key Softbox: Broad commercial white softbox reflector
-    const keyBoxGeo = new THREE.PlaneGeometry(5.0, 6.5);
+    // Front Hero Softbox: Broad camera-axis diffuser eliminating the dark reflection gap down the hero face
+    const frontBoxGeo = new THREE.PlaneGeometry(5.2, 7.5);
+    const frontBoxMat = new THREE.MeshBasicMaterial({ color: 0xe2e6ee });
+    const frontBox = new THREE.Mesh(frontBoxGeo, frontBoxMat);
+    frontBox.position.set(0.0, 1.8, 4.2);
+    frontBox.lookAt(0, 0, 0);
+    envScene.add(frontBox);
+
+    // Key Softbox: Broad commercial white softbox reflector (front-right key)
+    const keyBoxGeo = new THREE.PlaneGeometry(4.8, 6.5);
     const keyBoxMat = new THREE.MeshBasicMaterial({ color: 0xf4f6fa });
     const keyBox = new THREE.Mesh(keyBoxGeo, keyBoxMat);
-    keyBox.position.set(3.5, 3.2, 2.8);
+    keyBox.position.set(2.8, 3.0, 2.6);
     keyBox.lookAt(0, 0, 0);
     envScene.add(keyBox);
 
-    // Fill Softbox: Warm ivory soft reflector
-    const fillBoxGeo = new THREE.PlaneGeometry(4.5, 6.5);
+    // Fill Softbox: Warm ivory soft reflector (flank fill)
+    const fillBoxGeo = new THREE.PlaneGeometry(4.2, 6.5);
     const fillBoxMat = new THREE.MeshBasicMaterial({ color: 0xf6eee6 });
     const fillBox = new THREE.Mesh(fillBoxGeo, fillBoxMat);
-    fillBox.position.set(-3.8, 1.8, 2.0);
+    fillBox.position.set(-3.2, 1.8, 1.8);
     fillBox.lookAt(0, 0, 0);
     envScene.add(fillBox);
 
@@ -461,19 +469,27 @@ export function createStudioEnvironmentMap(
   } else {
     envScene.background = new THREE.Color(0x22262e);
 
-    // Key Softbox: Clean neutral white softbox reflector
-    const keyBoxGeo = new THREE.PlaneGeometry(5.0, 6.5);
+    // Front Hero Softbox: Broad camera-axis platinum diffuser eliminating the dark reflection gap down the hero face
+    const frontBoxGeo = new THREE.PlaneGeometry(5.2, 7.5);
+    const frontBoxMat = new THREE.MeshBasicMaterial({ color: 0xd8e0eb });
+    const frontBox = new THREE.Mesh(frontBoxGeo, frontBoxMat);
+    frontBox.position.set(0.0, 1.8, 4.2);
+    frontBox.lookAt(0, 0, 0);
+    envScene.add(frontBox);
+
+    // Key Softbox: Clean neutral white softbox reflector (front-right key)
+    const keyBoxGeo = new THREE.PlaneGeometry(4.8, 6.5);
     const keyBoxMat = new THREE.MeshBasicMaterial({ color: 0xf4f6fa });
     const keyBox = new THREE.Mesh(keyBoxGeo, keyBoxMat);
-    keyBox.position.set(3.5, 3.2, 2.8);
+    keyBox.position.set(2.8, 3.0, 2.6);
     keyBox.lookAt(0, 0, 0);
     envScene.add(keyBox);
 
-    // Fill Softbox: Soft cool platinum reflector
-    const fillBoxGeo = new THREE.PlaneGeometry(4.5, 6.5);
+    // Fill Softbox: Soft cool platinum reflector (flank fill)
+    const fillBoxGeo = new THREE.PlaneGeometry(4.2, 6.5);
     const fillBoxMat = new THREE.MeshBasicMaterial({ color: 0xd4dee8 });
     const fillBox = new THREE.Mesh(fillBoxGeo, fillBoxMat);
-    fillBox.position.set(-3.8, 1.8, 2.0);
+    fillBox.position.set(-3.2, 1.8, 1.8);
     fillBox.lookAt(0, 0, 0);
     envScene.add(fillBox);
 

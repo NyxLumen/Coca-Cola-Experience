@@ -73,8 +73,8 @@ export class RealityA {
 
     // 7. Commercial Studio Lighting Rig
     // Product Key Light: Clean commercial white softbox revealing true red body and pristine white Spencerian script
-    this.keyLight = new THREE.DirectionalLight(0xfffaf4, 2.5);
-    this.keyLight.position.set(2.6, 3.4, 2.6);
+    this.keyLight = new THREE.DirectionalLight(0xfffaf4, 2.4);
+    this.keyLight.position.set(1.8, 3.2, 3.0);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.width = 1024;
     this.keyLight.shadow.mapSize.height = 1024;
@@ -107,9 +107,9 @@ export class RealityA {
     this.stageAmbient.layers.set(1);
     this.scene.add(this.stageAmbient);
 
-    // Fill Light: Soft neutral-white fill preserving pristine white logo contrast
-    this.fillLight = new THREE.DirectionalLight(0xf0f4f8, 1.15);
-    this.fillLight.position.set(-2.8, 1.4, 2.0);
+    // Fill Light: Soft neutral-white fill preserving pristine white logo contrast and eliminating center trough
+    this.fillLight = new THREE.DirectionalLight(0xf0f4f8, 1.3);
+    this.fillLight.position.set(-1.8, 1.8, 3.0);
     this.fillLight.layers.set(0);
     this.scene.add(this.fillLight);
 

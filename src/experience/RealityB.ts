@@ -73,8 +73,8 @@ export class RealityB {
 
     // 7. High-Clarity Commercial Lighting Rig
     // Product Key Light: Clean neutral white key revealing brushed aluminum form
-    this.keyLight = new THREE.DirectionalLight(0xf5f8fc, 2.5);
-    this.keyLight.position.set(2.6, 3.4, 2.6);
+    this.keyLight = new THREE.DirectionalLight(0xf5f8fc, 2.4);
+    this.keyLight.position.set(1.8, 3.2, 3.0);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.width = 1024;
     this.keyLight.shadow.mapSize.height = 1024;
@@ -107,9 +107,9 @@ export class RealityB {
     this.stageAmbient.layers.set(1);
     this.scene.add(this.stageAmbient);
 
-    // Fill Light: Soft cool slate-blue fill preventing muddy darks
-    this.fillLight = new THREE.DirectionalLight(0xcfdce8, 1.15);
-    this.fillLight.position.set(-2.8, 1.4, 2.0);
+    // Fill Light: Soft cool slate-blue fill preventing muddy darks and eliminating center trough
+    this.fillLight = new THREE.DirectionalLight(0xcfdce8, 1.3);
+    this.fillLight.position.set(-1.8, 1.8, 3.0);
     this.fillLight.layers.set(0);
     this.scene.add(this.fillLight);
 

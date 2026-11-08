@@ -60,6 +60,8 @@ export class ExperienceEngine {
       this.config = { ...this.config, ...initialConfig };
     }
 
+    (window as unknown as { THREE: typeof THREE }).THREE = THREE;
+
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
