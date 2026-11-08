@@ -24,6 +24,7 @@ export class RealityA {
   private specularStrip: THREE.DirectionalLight;
   private backdropSpot: THREE.SpotLight;
   private ambientLight: THREE.AmbientLight;
+  private stageAmbient: THREE.AmbientLight;
 
   constructor(
     canonicalGeometry: THREE.BufferGeometry,
@@ -43,14 +44,17 @@ export class RealityA {
 
     // 3. Seamless Rich Multi-Tonal Coca-Cola Red Cyclorama Infinity Cove
     this.cyclorama = createStudioCycloramaMesh('classic');
+    this.cyclorama.layers.set(1);
     this.scene.add(this.cyclorama);
 
     // 4. Luminous Red Liquid Light Caustic Pool
     this.causticGlow = createCausticGlowMesh('classic');
+    this.causticGlow.layers.set(0);
     this.scene.add(this.causticGlow);
 
     // 5. Multi-Lobe Campaign Grounding Shadow
     this.contactShadow = createCampaignContactShadow('classic');
+    this.contactShadow.layers.set(0);
     this.scene.add(this.contactShadow);
 
     // 6. Canonical PBR Can Mesh with Dynamic Commercial Hero Orientation
@@ -59,6 +63,7 @@ export class RealityA {
     this.canMesh.name = 'CokeCan_RealityA';
     this.canMesh.castShadow = true;
     this.canMesh.receiveShadow = true;
+    this.canMesh.layers.set(0);
 
     // Dynamic campaign tilt presenting the Spencerian script heroically
     this.canMesh.position.set(0.0, 0.05, 0.0);
@@ -67,7 +72,7 @@ export class RealityA {
     this.scene.add(this.canMesh);
 
     // 7. Commercial Studio Lighting Rig
-    // Key Light: Clean commercial white softbox revealing true red body and pristine white Spencerian script
+    // Product Key Light: Clean commercial white softbox revealing true red body and pristine white Spencerian script
     this.keyLight = new THREE.DirectionalLight(0xfffaf4, 2.5);
     this.keyLight.position.set(2.6, 3.4, 2.6);
     this.keyLight.castShadow = true;
@@ -85,38 +90,50 @@ export class RealityA {
     this.keyLight.shadow.camera.near = 1.6;
     this.keyLight.shadow.camera.far = 8.8;
     this.keyLight.shadow.camera.updateProjectionMatrix();
+    this.keyLight.layers.set(0);
     this.scene.add(this.keyLight);
 
-    // Backdrop Spotlight: Positioned BEHIND the can (z = -0.6) pointing backwards onto the cyclorama wall
-    // This illuminates the environment with vibrant red aura WITHOUT spilling onto the can
-    this.backdropSpot = new THREE.SpotLight(0xff1222, 2.4, 12, Math.PI / 2.6, 0.85);
+    // Backdrop Spotlight: Positioned on Layer 1 illuminating ONLY the cyclorama wall behind the can
+    // Soft, diffused ambient scarlet glow without concentrated hotspot or clipping
+    this.backdropSpot = new THREE.SpotLight(0xc8101e, 0.30, 20, Math.PI / 1.7, 1.0);
     this.backdropSpot.position.set(0.0, 0.6, -0.6);
-    this.backdropSpot.target.position.set(0.0, 0.8, -3.2);
+    this.backdropSpot.target.position.set(0.0, 0.8, -3.5);
+    this.backdropSpot.layers.set(1);
     this.scene.add(this.backdropSpot);
     this.scene.add(this.backdropSpot.target);
+
+    // Stage Ambient: Dedicated soft ambient on Layer 1 bringing out the rich cyclorama texture without blowing out
+    this.stageAmbient = new THREE.AmbientLight(0xffffff, 0.28);
+    this.stageAmbient.layers.set(1);
+    this.scene.add(this.stageAmbient);
 
     // Fill Light: Soft neutral-white fill preserving pristine white logo contrast
     this.fillLight = new THREE.DirectionalLight(0xf0f4f8, 1.15);
     this.fillLight.position.set(-2.8, 1.4, 2.0);
+    this.fillLight.layers.set(0);
     this.scene.add(this.fillLight);
 
     // Rim Light Top: Crisp white top rim separating silver lid and tab with razor highlights
     this.rimLightTop = new THREE.DirectionalLight(0xffffff, 2.8);
     this.rimLightTop.position.set(0.1, 3.8, -2.5);
+    this.rimLightTop.layers.set(0);
     this.scene.add(this.rimLightTop);
 
     // Specular Strip: Clean commercial white highlight down cylinder flank
     this.specularStrip = new THREE.DirectionalLight(0xffffff, 1.8);
     this.specularStrip.position.set(3.2, 0.1, 0.8);
+    this.specularStrip.layers.set(0);
     this.scene.add(this.specularStrip);
 
     // Flank Kicker: Neutral kicker defining left silhouette
     this.rimLightFlank = new THREE.DirectionalLight(0xf0f2f5, 1.2);
     this.rimLightFlank.position.set(-3.2, 0.0, -1.0);
+    this.rimLightFlank.layers.set(0);
     this.scene.add(this.rimLightFlank);
 
     // Ambient: Soft neutral studio ambient preventing muddy shadows without adding a red veil
     this.ambientLight = new THREE.AmbientLight(0x32282c, 0.45);
+    this.ambientLight.layers.set(0);
     this.scene.add(this.ambientLight);
   }
 
@@ -131,6 +148,7 @@ export class RealityA {
   public dispose(): void {
     this.material.dispose();
     this.bgTexture.dispose();
+    this.stageAmbient.dispose();
     this.cyclorama.geometry.dispose();
     if (Array.isArray(this.cyclorama.material)) {
       this.cyclorama.material.forEach((m) => m.dispose());

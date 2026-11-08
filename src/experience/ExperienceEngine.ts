@@ -46,6 +46,9 @@ export class ExperienceEngine {
   private loadTimeMs: number = 0;
   private canTriangles: number = 0;
 
+  // Constant real-world angular velocity (~27.5 deg/sec)
+  private readonly ROTATION_SPEED_RAD_PER_SEC: number = 0.48;
+
   constructor(
     container: HTMLElement,
     initialConfig?: Partial<ExperienceConfig>,
@@ -80,7 +83,9 @@ export class ExperienceEngine {
 
     // 2. Single Shared Camera (38 deg vertical FOV, 35mm equivalent)
     this.camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 50);
-    this.camera.position.set(0, 0.15, 3.2);
+    this.camera.position.set(0, 0.12, 3.85);
+    // Camera observes both Layer 0 (Commercial Product) and Layer 1 (Stage & Cyclorama)
+    this.camera.layers.enable(1);
 
     // 3. OrbitControls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -239,7 +244,7 @@ export class ExperienceEngine {
   }
 
   public resetCamera(): void {
-    this.camera.position.set(0, 0.15, 3.2);
+    this.camera.position.set(0, 0.12, 3.85);
     this.camera.lookAt(0, 0, 0);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
@@ -284,12 +289,15 @@ export class ExperienceEngine {
       this.frameCount++;
       this.fpsAccumulator += 1000 / (delta || 16.6);
 
-      // Auto-Rotation updates both can meshes simultaneously to ensure perfect sync
+      // Delta in seconds, clamped to avoid jumps if browser tab was backgrounded or delayed
+      const deltaSec = Math.min(Math.max(delta * 0.001, 0.0), 0.1);
+
+      // Auto-Rotation uses constant real-world angular velocity decoupled from frame rate
+      // Guarantees identical 0.48 rad/sec (~27.5 deg/sec) at 60, 70, 90, 100, or 144 FPS
       if (this.config.autoRotate && this.realityA && this.realityB) {
-        this.canRotationY += 0.008;
+        this.canRotationY += this.ROTATION_SPEED_RAD_PER_SEC * deltaSec;
         this.realityA.canMesh.rotation.y = this.canRotationY;
         this.realityB.canMesh.rotation.y = this.canRotationY;
-        this.renderer.shadowMap.needsUpdate = true;
       }
 
       this.controls.update();
@@ -339,8 +347,8 @@ export class ExperienceEngine {
         const totalCalls = this.renderer.info.render.calls;
         const callsCompositor = totalCalls - (callsA + callsB);
 
-        // Telemetry calculation every 30 frames
-        if (this.frameCount >= 30) {
+        // Telemetry calculation every 60 frames (~1Hz update rate to prevent React render spikes)
+        if (this.frameCount >= 60) {
           const avgFps = Math.round(this.fpsAccumulator / this.frameCount);
           const avgDelta = (1000 / avgFps).toFixed(1);
           this.frameCount = 0;
