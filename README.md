@@ -30,9 +30,11 @@ All three products inhabit a single, continuous 3D coordinate space. State trans
 
 ## 🗺 Roadmap
 
-- [x] **Phase 0 — Creative Direction & Technical Foundation** *(Current)*
-- [ ] **Phase 1 — 3D Asset Pipeline**
-- [ ] **Phase 2 — Core 3D Scene**
+- [x] **Phase 0 — Creative Direction & Technical Foundation**
+- [x] **Phase 1 — 3D Asset Pipeline** *(Canonical GLB, Config A PBR, Calibrated Roughness Pipeline)*
+- [x] **Phase 2A — Dual-Reality Rendering Foundation** *(Synchronized Cameras, Dual Render Targets & Compositor)*
+- [x] **Phase 2B — GPU Fluid Simulation** *(Eulerian Navier-Stokes, Momentum Advection, Jacobi Pressure, Idle Vortices)*
+- [ ] **Phase 2C — Fluid-Driven Compositor & Optical Refraction** *(Velocity Refraction & Chromatic Aberration Transition)*
 - [ ] **Phase 3 — Product State System**
 - [ ] **Phase 4 — Idle Motion & Interaction**
 - [ ] **Phase 5 — Transition Engine**

@@ -14,7 +14,12 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
 
   uniform sampler2D tRealityA;
   uniform sampler2D tRealityB;
-  uniform int uMode; // 0: composite, 1: reality-a, 2: reality-b, 3: side-by-side, 4: organic-mask, 5: debug-mask
+  uniform sampler2D tFluidDensity;
+  uniform sampler2D tFluidVelocity;
+  uniform sampler2D tFluidPressure;
+  uniform sampler2D tFluidDivergence;
+
+  uniform int uMode;
   uniform float uMixRatio;
   uniform float uSplitPosition;
   uniform float uFeather;
@@ -24,7 +29,7 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
 
   varying vec2 vUv;
 
-  // 2D Simplex Noise for Organic Fluid Boundary Simulation
+  // 2D Simplex Noise for Phase 2A Baseline Organic Fluid Boundary
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -63,7 +68,50 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
     return total;
   }
 
+  vec3 turbo(float t) {
+    t = clamp(t, 0.0, 1.0);
+    return clamp(vec3(
+      1.5 * t,
+      1.5 * (1.0 - abs(2.0 * t - 1.0)),
+      1.5 * (1.0 - t)
+    ), 0.0, 1.0);
+  }
+
   void main() {
+    // Debug Modes for Real-Time GPU Fluid Inspection
+    if (uMode == 7) {
+      // Fluid Density
+      vec4 dens = texture2D(tFluidDensity, vUv);
+      gl_FragColor = vec4(dens.rgb, 1.0);
+      return;
+    } else if (uMode == 8) {
+      // Velocity Vector Field (normalized direction mapped to RGB)
+      vec2 vel = texture2D(tFluidVelocity, vUv).xy * 0.02;
+      vec3 col = vec3(0.5 + vel.x, 0.5 + vel.y, 0.5 - 0.5 * (vel.x + vel.y));
+      gl_FragColor = vec4(col, 1.0);
+      return;
+    } else if (uMode == 9) {
+      // Velocity Magnitude Heatmap
+      vec2 vel = texture2D(tFluidVelocity, vUv).xy;
+      float speed = length(vel) * 0.025;
+      gl_FragColor = vec4(turbo(speed), 1.0);
+      return;
+    } else if (uMode == 10) {
+      // Divergence Heatmap (Red: expansion, Blue: compression)
+      float div = texture2D(tFluidDivergence, vUv).x * 20.0;
+      vec3 col = vec3(max(div, 0.0), 0.0, max(-div, 0.0));
+      gl_FragColor = vec4(col, 1.0);
+      return;
+    } else if (uMode == 11) {
+      // Pressure Field (Cyan: positive, Magenta: negative)
+      float p = texture2D(tFluidPressure, vUv).x * 10.0;
+      vec3 col = (p >= 0.0)
+        ? mix(vec3(0.0), vec3(0.1, 0.8, 0.9), clamp(p, 0.0, 1.0))
+        : mix(vec3(0.0), vec3(0.9, 0.2, 0.7), clamp(-p, 0.0, 1.0));
+      gl_FragColor = vec4(col, 1.0);
+      return;
+    }
+
     vec4 colA = texture2D(tRealityA, vUv);
     vec4 colB = texture2D(tRealityB, vUv);
 
@@ -81,7 +129,6 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
       float pixelWidth = 1.0 / max(uResolution.x, 1.0);
       float distToSplit = abs(vUv.x - uSplitPosition);
       divider = 1.0 - smoothstep(0.0, pixelWidth * 1.5, distToSplit);
-
       mask = step(uSplitPosition, vUv.x);
     } else if (uMode == 4) {
       // Organic test mask simulating fluid droplet / boundary reveal
@@ -89,13 +136,10 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
       aspectUv.x *= (uResolution.x / max(uResolution.y, 1.0));
 
       float noise = fbm(aspectUv * uOrganicScale + vec2(uTime * 0.12, uTime * 0.08));
-      
-      // Radial or diagonal wave front anchored by uMixRatio
       float dist = distance(vUv, vec2(0.5, 0.45)) + noise * 0.22;
       float threshold = uMixRatio * 1.25;
       float featherVal = max(uFeather, 0.01);
       mask = smoothstep(threshold - featherVal, threshold + featherVal, dist);
-      // Invert so Reality B reveals from the center/core outward
       mask = 1.0 - mask;
     } else if (uMode == 5) {
       // Debug Mask Visualizer
@@ -103,10 +147,15 @@ const COMPOSITOR_FRAGMENT_SHADER = /* glsl */ `
       mask = smoothstep(uMixRatio - featherVal, uMixRatio + featherVal, vUv.x);
       gl_FragColor = vec4(vec3(mask), 1.0);
       return;
+    } else if (uMode == 6) {
+      // Fluid-Driven Dynamic Reveal Preview
+      // Samples genuine density from the GPU fluid simulation
+      vec4 fluidD = texture2D(tFluidDensity, vUv);
+      float dens = length(fluidD.rgb);
+      mask = clamp(dens, 0.0, 1.0);
     } else {
       // Mode 0: Smooth linear / directional composite blend
       float featherVal = max(uFeather, 0.001);
-      // Sweeps from left to right as uMixRatio increases
       float threshold = uMixRatio;
       mask = smoothstep(threshold - featherVal, threshold + featherVal, vUv.x);
     }
@@ -163,6 +212,10 @@ export class Compositor {
       uniforms: {
         tRealityA: { value: this.targetA.texture },
         tRealityB: { value: this.targetB.texture },
+        tFluidDensity: { value: null },
+        tFluidVelocity: { value: null },
+        tFluidPressure: { value: null },
+        tFluidDivergence: { value: null },
         uMode: { value: 0 },
         uMixRatio: { value: 0.5 },
         uSplitPosition: { value: 0.5 },
@@ -173,12 +226,24 @@ export class Compositor {
       },
       depthTest: false,
       depthWrite: false,
-      toneMapped: false, // Tone mapping already applied in respective PBR scene passes
+      toneMapped: false,
     });
 
     const quadGeo = new THREE.PlaneGeometry(2, 2);
     this.quadMesh = new THREE.Mesh(quadGeo, this.material);
     this.quadScene.add(this.quadMesh);
+  }
+
+  public setFluidTextures(
+    density: THREE.Texture,
+    velocity: THREE.Texture,
+    pressure?: THREE.Texture,
+    divergence?: THREE.Texture
+  ): void {
+    this.material.uniforms.tFluidDensity.value = density;
+    this.material.uniforms.tFluidVelocity.value = velocity;
+    if (pressure) this.material.uniforms.tFluidPressure.value = pressure;
+    if (divergence) this.material.uniforms.tFluidDivergence.value = divergence;
   }
 
   public setMode(mode: CompositorMode): void {
@@ -201,6 +266,24 @@ export class Compositor {
         break;
       case 'debug-mask':
         modeInt = 5;
+        break;
+      case 'fluid-reveal-preview':
+        modeInt = 6;
+        break;
+      case 'fluid-density':
+        modeInt = 7;
+        break;
+      case 'fluid-velocity':
+        modeInt = 8;
+        break;
+      case 'fluid-velocity-magnitude':
+        modeInt = 9;
+        break;
+      case 'fluid-divergence':
+        modeInt = 10;
+        break;
+      case 'fluid-pressure':
+        modeInt = 11;
         break;
     }
     this.material.uniforms.uMode.value = modeInt;

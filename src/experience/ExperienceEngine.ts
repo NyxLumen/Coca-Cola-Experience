@@ -5,20 +5,22 @@ import { AssetManager } from './AssetManager';
 import { RealityA } from './RealityA';
 import { RealityB } from './RealityB';
 import { Compositor } from './Compositor';
+import { FluidSimulation } from '../fluid/FluidSimulation';
 import type { ExperienceConfig, ExperienceTelemetry, TextureTier } from './types';
 
 export class ExperienceEngine {
-  private container: HTMLElement;
-  private renderer: THREE.WebGLRenderer;
-  private camera: THREE.PerspectiveCamera;
-  private controls: OrbitControls;
-  private assetManager: AssetManager;
-  private realityA: RealityA | null = null;
-  private realityB: RealityB | null = null;
-  private compositor: Compositor | null = null;
-  private envTexture: THREE.Texture | null = null;
+  public container: HTMLElement;
+  public renderer: THREE.WebGLRenderer;
+  public camera: THREE.PerspectiveCamera;
+  public controls: OrbitControls;
+  public assetManager: AssetManager;
+  public realityA: RealityA | null = null;
+  public realityB: RealityB | null = null;
+  public compositor: Compositor | null = null;
+  public fluidSimulation: FluidSimulation | null = null;
+  public envTexture: THREE.Texture | null = null;
 
-  private config: ExperienceConfig = {
+  public config: ExperienceConfig = {
     mode: 'composite',
     mixRatio: 0.5,
     splitPosition: 0.5,
@@ -31,7 +33,7 @@ export class ExperienceEngine {
 
   private animationFrameId: number | null = null;
   private isDestroyed: boolean = false;
-  private isReady: boolean = false;
+  public isReady: boolean = false;
   private canRotationY: number = 0;
 
   // Telemetry tracking
@@ -88,16 +90,64 @@ export class ExperienceEngine {
     // 4. Asset Manager
     this.assetManager = new AssetManager();
 
-    // 5. Compositor Pass
+    // 5. GPU Fluid Simulation Engine
+    this.fluidSimulation = new FluidSimulation(
+      this.renderer,
+      width,
+      height,
+      this.config.fluidConfig
+    );
+
+    // 6. Compositor Pass
     this.compositor = new Compositor(width, height, dpr);
+    this.compositor.setFluidTextures(
+      this.fluidSimulation.getDensityTexture(),
+      this.fluidSimulation.getVelocityTexture(),
+      this.fluidSimulation.getPressureTexture(),
+      this.fluidSimulation.getDivergenceTexture()
+    );
     this.applyConfigToCompositor();
 
-    // 6. Bind Event Listeners
+    // 7. Bind Pointer & Window Event Listeners
+    this.bindPointerEvents();
     window.addEventListener('resize', this.handleResize);
 
-    // 7. Initialize Async Assets
+    // 8. Initialize Async Assets
     this.initPipeline();
   }
+
+  private bindPointerEvents(): void {
+    const el = this.container;
+
+    el.addEventListener('pointermove', this.handlePointerMove, { passive: true });
+    el.addEventListener('pointerdown', this.handlePointerDown, { passive: true });
+    window.addEventListener('pointerup', this.handlePointerUp, { passive: true });
+  }
+
+  private handlePointerMove = (e: PointerEvent): void => {
+    if (!this.fluidSimulation || this.isDestroyed) return;
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const normX = (e.clientX - rect.left) / rect.width;
+    const normY = 1.0 - (e.clientY - rect.top) / rect.height; // UV coordinate space (0 at bottom)
+    this.fluidSimulation.onPointerMove(normX, normY);
+  };
+
+  private handlePointerDown = (e: PointerEvent): void => {
+    if (!this.fluidSimulation || this.isDestroyed) return;
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const normX = (e.clientX - rect.left) / rect.width;
+    const normY = 1.0 - (e.clientY - rect.top) / rect.height;
+    this.fluidSimulation.onPointerDown(normX, normY);
+  };
+
+  private handlePointerUp = (): void => {
+    if (!this.fluidSimulation || this.isDestroyed) return;
+    this.fluidSimulation.onPointerUp();
+  };
 
   private async initPipeline(): Promise<void> {
     const startTime = performance.now();
@@ -163,6 +213,10 @@ export class ExperienceEngine {
       this.changeTextureTier(newConfig.textureTier);
     }
 
+    if (newConfig.fluidConfig && this.fluidSimulation) {
+      this.fluidSimulation.setConfig(newConfig.fluidConfig);
+    }
+
     this.applyConfigToCompositor();
   }
 
@@ -193,8 +247,20 @@ export class ExperienceEngine {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(dpr);
 
+    if (this.fluidSimulation) {
+      this.fluidSimulation.resize(width, height);
+    }
+
     if (this.compositor) {
       this.compositor.setSize(width, height, dpr);
+      if (this.fluidSimulation) {
+        this.compositor.setFluidTextures(
+          this.fluidSimulation.getDensityTexture(),
+          this.fluidSimulation.getVelocityTexture(),
+          this.fluidSimulation.getPressureTexture(),
+          this.fluidSimulation.getDivergenceTexture()
+        );
+      }
     }
   };
 
@@ -217,8 +283,13 @@ export class ExperienceEngine {
 
       this.controls.update();
 
+      // Step GPU Fluid Simulation
+      if (this.fluidSimulation) {
+        this.fluidSimulation.step(Math.min(delta * 0.001, 0.033));
+      }
+
       if (this.isReady && this.realityA && this.realityB && this.compositor) {
-        // Reset renderer calls count
+        // Reset renderer calls count for per-frame metric tracking
         this.renderer.info.reset();
 
         // 1. Pass A: Render Reality A to Target A
@@ -246,6 +317,8 @@ export class ExperienceEngine {
 
           const rtWidth = this.compositor.targetA.width;
           const rtHeight = this.compositor.targetA.height;
+          const fluidTele = this.fluidSimulation ? this.fluidSimulation.getTelemetry() : undefined;
+          const fluidVram = fluidTele ? fluidTele.gpuMemoryEstMb : 0;
 
           this.latestTelemetry = {
             fps: avgFps,
@@ -259,10 +332,11 @@ export class ExperienceEngine {
             geometriesCount: this.renderer.info.memory.geometries,
             texturesCount: this.renderer.info.memory.textures,
             estimatedVramMb: Math.round(
-              ((rtWidth * rtHeight * 8 * 2) / (1024 * 1024)) + 48
+              ((rtWidth * rtHeight * 8 * 2) / (1024 * 1024)) + 48 + fluidVram
             ),
             renderTargetResolution: `${rtWidth} × ${rtHeight}`,
             loadTimeMs: this.loadTimeMs,
+            fluid: fluidTele,
           };
 
           if (this.onTelemetryUpdate) {
@@ -279,11 +353,21 @@ export class ExperienceEngine {
     this.isDestroyed = true;
     window.removeEventListener('resize', this.handleResize);
 
+    const el = this.container;
+    el.removeEventListener('pointermove', this.handlePointerMove);
+    el.removeEventListener('pointerdown', this.handlePointerDown);
+    window.removeEventListener('pointerup', this.handlePointerUp);
+
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
     }
 
     this.controls.dispose();
+
+    if (this.fluidSimulation) {
+      this.fluidSimulation.dispose();
+      this.fluidSimulation = null;
+    }
 
     if (this.realityA) {
       this.realityA.dispose();

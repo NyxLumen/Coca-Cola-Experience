@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import * as THREE from 'three';
 import { ExperienceEngine } from './ExperienceEngine';
 import type { CompositorMode, ExperienceConfig, ExperienceTelemetry, TextureTier } from './types';
 import './DualRealityExperience.css';
@@ -24,6 +25,11 @@ export function DualRealityExperience({
   const [textureTier, setTextureTier] = useState<TextureTier>('2k');
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
   const [exposure, setExposure] = useState<number>(1.05);
+
+  // Fluid Tunable States
+  const [idleEnabled, setIdleEnabled] = useState<boolean>(true);
+  const [velocityDissipation, setVelocityDissipation] = useState<number>(0.985);
+  const [splatForce, setSplatForce] = useState<number>(4500.0);
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<ExperienceTelemetry>({
@@ -52,6 +58,11 @@ export function DualRealityExperience({
     textureTier,
     autoRotate,
     exposure,
+    fluidConfig: {
+      idleEnabled,
+      velocityDissipation,
+      splatForce,
+    },
   });
 
   // Initialize Experience Engine outside React's render loop
@@ -73,6 +84,7 @@ export function DualRealityExperience({
     (window as unknown as { __DUAL_REALITY_ENGINE__: ExperienceEngine }).__DUAL_REALITY_ENGINE__ = engine;
     (window as unknown as {
       __SET_EXPERIENCE_STATE__: (state: Partial<ExperienceConfig>) => void;
+      __INJECT_FLUID_SPLAT__: (x: number, y: number, dx: number, dy: number, color?: THREE.Color, radius?: number) => void;
     }).__SET_EXPERIENCE_STATE__ = (state: Partial<ExperienceConfig>) => {
       if (state.mode !== undefined) setMode(state.mode);
       if (state.mixRatio !== undefined) setMixRatio(state.mixRatio);
@@ -82,7 +94,18 @@ export function DualRealityExperience({
       if (state.textureTier !== undefined) setTextureTier(state.textureTier);
       if (state.autoRotate !== undefined) setAutoRotate(state.autoRotate);
       if (state.exposure !== undefined) setExposure(state.exposure);
+      if (state.fluidConfig?.idleEnabled !== undefined) setIdleEnabled(state.fluidConfig.idleEnabled);
+      if (state.fluidConfig?.velocityDissipation !== undefined) setVelocityDissipation(state.fluidConfig.velocityDissipation);
+      if (state.fluidConfig?.splatForce !== undefined) setSplatForce(state.fluidConfig.splatForce);
       engine.setConfig(state);
+    };
+
+    (window as unknown as {
+      __INJECT_FLUID_SPLAT__: (x: number, y: number, dx: number, dy: number, color?: THREE.Color, radius?: number) => void;
+    }).__INJECT_FLUID_SPLAT__ = (x: number, y: number, dx: number, dy: number, color?: THREE.Color, radius?: number) => {
+      if (engine.fluidSimulation) {
+        engine.fluidSimulation.addSplat(x, y, dx, dy, color, radius);
+      }
     };
 
     return () => {
@@ -90,8 +113,9 @@ export function DualRealityExperience({
       engineRef.current = null;
       delete (window as unknown as { __DUAL_REALITY_ENGINE__?: unknown }).__DUAL_REALITY_ENGINE__;
       delete (window as unknown as { __SET_EXPERIENCE_STATE__?: unknown }).__SET_EXPERIENCE_STATE__;
+      delete (window as unknown as { __INJECT_FLUID_SPLAT__?: unknown }).__INJECT_FLUID_SPLAT__;
     };
-  }, []); // Run once on mount
+  }, []);
 
   // Sync state changes to engine
   const updateConfig = useCallback((patch: Partial<ExperienceConfig>) => {
@@ -104,6 +128,12 @@ export function DualRealityExperience({
     if (patch.autoRotate !== undefined) setAutoRotate(patch.autoRotate);
     if (patch.exposure !== undefined) setExposure(patch.exposure);
 
+    if (patch.fluidConfig) {
+      if (patch.fluidConfig.idleEnabled !== undefined) setIdleEnabled(patch.fluidConfig.idleEnabled);
+      if (patch.fluidConfig.velocityDissipation !== undefined) setVelocityDissipation(patch.fluidConfig.velocityDissipation);
+      if (patch.fluidConfig.splatForce !== undefined) setSplatForce(patch.fluidConfig.splatForce);
+    }
+
     if (engineRef.current) {
       engineRef.current.setConfig(patch);
     }
@@ -115,6 +145,12 @@ export function DualRealityExperience({
     }
   }, []);
 
+  const toggleIdle = useCallback(() => {
+    const nextVal = !idleEnabled;
+    setIdleEnabled(nextVal);
+    updateConfig({ fluidConfig: { idleEnabled: nextVal } });
+  }, [idleEnabled, updateConfig]);
+
   return (
     <div className="dual-reality-container">
       {/* WebGL Canvas Mount */}
@@ -124,7 +160,7 @@ export function DualRealityExperience({
       <header className="experience-header">
         <div className="experience-title-group">
           <span className="brand-eyebrow">Coca-Cola Continuous Experience</span>
-          <h1 className="experience-title">Dual-Reality Rendering Engine</h1>
+          <h1 className="experience-title">Dual-Reality & GPU Fluid Engine</h1>
         </div>
 
         <div className="header-actions">
@@ -138,7 +174,7 @@ export function DualRealityExperience({
               Phase 0 Concept
             </button>
           )}
-          <span className="phase-pill">Phase 2A Foundation</span>
+          <span className="phase-pill">Phase 2B: GPU Fluid Simulation</span>
         </div>
       </header>
 
@@ -166,38 +202,54 @@ export function DualRealityExperience({
           <span>Triangles (Can):</span>
           <span className="telemetry-val">{telemetry.trianglesCan.toLocaleString()}</span>
         </div>
+        {telemetry.fluid && (
+          <>
+            <div className="telemetry-row">
+              <span>Fluid Grid (Sim/Dye):</span>
+              <span className="telemetry-val fluid-stat">
+                {telemetry.fluid.simWidth}×{telemetry.fluid.simHeight} / {telemetry.fluid.dyeWidth}×{telemetry.fluid.dyeHeight}
+              </span>
+            </div>
+            <div className="telemetry-row">
+              <span>Fluid Passes:</span>
+              <span className="telemetry-val fluid-stat">
+                {telemetry.fluid.passesPerFrame} passes ({telemetry.fluid.jacobiIterations} iters)
+              </span>
+            </div>
+            <div className="telemetry-row">
+              <span>Fluid VRAM:</span>
+              <span className="telemetry-val fluid-stat">~{telemetry.fluid.gpuMemoryEstMb} MB</span>
+            </div>
+          </>
+        )}
         <div className="telemetry-row">
-          <span>Est. VRAM:</span>
+          <span>Total VRAM:</span>
           <span className="telemetry-val">~{telemetry.estimatedVramMb} MB</span>
-        </div>
-        <div className="telemetry-row">
-          <span>Asset Load:</span>
-          <span className="telemetry-val">{telemetry.loadTimeMs} ms</span>
         </div>
       </aside>
 
       {/* Floating Control Panel */}
       <nav className="experience-control-panel">
-        <div className="control-row">
-          {/* Mode Selector */}
+        <div className="mode-selector-group">
+          <div className="mode-section-label">Presentation & Baseline Modes (Phase 2A)</div>
           <div className="mode-selector">
             <button
               className={`mode-btn ${mode === 'composite' ? 'active' : ''}`}
               onClick={() => updateConfig({ mode: 'composite' })}
             >
-              Composite Blend
+              Composite Slider
             </button>
             <button
               className={`mode-btn ${mode === 'reality-a' ? 'active' : ''}`}
               onClick={() => updateConfig({ mode: 'reality-a' })}
             >
-              100% Reality A (Classic)
+              100% Reality A
             </button>
             <button
               className={`mode-btn ${mode === 'reality-b' ? 'diet-active' : ''}`}
               onClick={() => updateConfig({ mode: 'reality-b' })}
             >
-              100% Reality B (Diet)
+              100% Reality B
             </button>
             <button
               className={`mode-btn ${mode === 'side-by-side' ? 'active' : ''}`}
@@ -209,7 +261,49 @@ export function DualRealityExperience({
               className={`mode-btn ${mode === 'organic-mask' ? 'active' : ''}`}
               onClick={() => updateConfig({ mode: 'organic-mask' })}
             >
-              Organic Test Mask
+              Organic Noise
+            </button>
+            <button
+              className={`mode-btn ${mode === 'fluid-reveal-preview' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-reveal-preview' })}
+            >
+              Fluid Reveal Preview
+            </button>
+          </div>
+        </div>
+
+        <div className="mode-selector-group">
+          <div className="mode-section-label">GPU Fluid Simulation Diagnostics (Phase 2B)</div>
+          <div className="mode-selector">
+            <button
+              className={`mode-btn ${mode === 'fluid-velocity-magnitude' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-velocity-magnitude' })}
+            >
+              Velocity Speed
+            </button>
+            <button
+              className={`mode-btn ${mode === 'fluid-velocity' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-velocity' })}
+            >
+              Velocity Vectors
+            </button>
+            <button
+              className={`mode-btn ${mode === 'fluid-density' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-density' })}
+            >
+              Density Field
+            </button>
+            <button
+              className={`mode-btn ${mode === 'fluid-divergence' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-divergence' })}
+            >
+              Divergence
+            </button>
+            <button
+              className={`mode-btn ${mode === 'fluid-pressure' ? 'fluid-active' : ''}`}
+              onClick={() => updateConfig({ mode: 'fluid-pressure' })}
+            >
+              Pressure
             </button>
             <button
               className={`mode-btn ${mode === 'debug-mask' ? 'active' : ''}`}
@@ -218,9 +312,17 @@ export function DualRealityExperience({
               Mask Grayscale
             </button>
           </div>
+        </div>
 
-          {/* Quick Actions */}
+        {/* Secondary Row: Quick Actions & Toggles */}
+        <div className="control-row">
           <div className="secondary-actions">
+            <button
+              className={`action-btn ${idleEnabled ? 'active-blue' : ''}`}
+              onClick={toggleIdle}
+            >
+              {idleEnabled ? 'Idle Wake: ON' : 'Idle Wake: OFF'}
+            </button>
             <button
               className={`action-btn ${autoRotate ? 'active' : ''}`}
               onClick={() => updateConfig({ autoRotate: !autoRotate })}
@@ -241,10 +343,8 @@ export function DualRealityExperience({
               <option value="1k">1K Mobile</option>
             </select>
           </div>
-        </div>
 
-        {/* Sliders Row */}
-        <div className="control-row">
+          {/* Contextual Sliders */}
           {mode === 'side-by-side' ? (
             <div className="slider-group">
               <label className="slider-label">Split Position</label>
@@ -259,11 +359,27 @@ export function DualRealityExperience({
               />
               <span className="slider-val">{(splitPosition * 100).toFixed(0)}%</span>
             </div>
+          ) : mode.startsWith('fluid-') ? (
+            <div className="slider-group">
+              <label className="slider-label">Velocity Inertia</label>
+              <input
+                type="range"
+                min="0.9"
+                max="0.998"
+                step="0.001"
+                value={velocityDissipation}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setVelocityDissipation(val);
+                  updateConfig({ fluidConfig: { velocityDissipation: val } });
+                }}
+                className="slider-input"
+              />
+              <span className="slider-val">{velocityDissipation.toFixed(3)}</span>
+            </div>
           ) : (
             <div className="slider-group">
-              <label className="slider-label">
-                {mode === 'organic-mask' ? 'Reveal Threshold' : 'Mix Ratio'}
-              </label>
+              <label className="slider-label">Mix Ratio</label>
               <input
                 type="range"
                 min="0"
@@ -277,33 +393,37 @@ export function DualRealityExperience({
             </div>
           )}
 
-          <div className="slider-group">
-            <label className="slider-label">Feather / Softness</label>
-            <input
-              type="range"
-              min="0.001"
-              max="0.25"
-              step="0.005"
-              value={feather}
-              onChange={(e) => updateConfig({ feather: parseFloat(e.target.value) })}
-              className="slider-input"
-            />
-            <span className="slider-val">{(feather * 100).toFixed(1)}%</span>
-          </div>
-
-          {mode === 'organic-mask' && (
+          {mode.startsWith('fluid-') ? (
             <div className="slider-group">
-              <label className="slider-label">Organic Noise Scale</label>
+              <label className="slider-label">Force</label>
               <input
                 type="range"
-                min="1.0"
-                max="10.0"
-                step="0.5"
-                value={organicScale}
-                onChange={(e) => updateConfig({ organicScale: parseFloat(e.target.value) })}
+                min="1000"
+                max="10000"
+                step="500"
+                value={splatForce}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setSplatForce(val);
+                  updateConfig({ fluidConfig: { splatForce: val } });
+                }}
                 className="slider-input"
               />
-              <span className="slider-val">{organicScale.toFixed(1)}x</span>
+              <span className="slider-val">{splatForce.toFixed(0)}</span>
+            </div>
+          ) : (
+            <div className="slider-group">
+              <label className="slider-label">Feather</label>
+              <input
+                type="range"
+                min="0.001"
+                max="0.25"
+                step="0.005"
+                value={feather}
+                onChange={(e) => updateConfig({ feather: parseFloat(e.target.value) })}
+                className="slider-input"
+              />
+              <span className="slider-val">{(feather * 100).toFixed(1)}%</span>
             </div>
           )}
         </div>
