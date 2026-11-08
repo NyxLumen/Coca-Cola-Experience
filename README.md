@@ -35,6 +35,7 @@ All three products inhabit a single, continuous 3D coordinate space. State trans
 - [x] **Phase 2A — Dual-Reality Rendering Foundation** *(Synchronized Cameras, Dual Render Targets & Compositor)*
 - [x] **Phase 2B — GPU Fluid Simulation** *(Eulerian Navier-Stokes, Momentum Advection, Jacobi Pressure, Idle Vortices)*
 - [x] **Phase 2C — Fluid-Driven Compositor (Revised)** *(Density-Driven Reveal, Spatially Locked Realities, Sub-Pixel Alignment, Subtle Optical Edge)*
+- [x] **Phase 2D — Rendering Quality & Visual Foundation** *(Hardware 4x MSAA, 16x Anisotropic Filtering, Tightened Shadow Frustum, Linear HDR Compositing, Conditional Scene Culling)*
 - [ ] **Phase 3 — Product State System**
 - [ ] **Phase 4 — Idle Motion & Interaction**
 - [ ] **Phase 5 — Transition Engine**

@@ -1,0 +1,453 @@
+{
+  "renderer": {
+    "isWebGL2": true,
+    "contextAttributes": {
+      "alpha": true,
+      "antialias": true,
+      "depth": true,
+      "desynchronized": false,
+      "failIfMajorPerformanceCaveat": false,
+      "powerPreference": "high-performance",
+      "premultipliedAlpha": true,
+      "preserveDrawingBuffer": false,
+      "stencil": false,
+      "xrCompatible": false
+    },
+    "pixelRatio": 1,
+    "outputColorSpace": "srgb",
+    "toneMapping": 4,
+    "toneMappingExposure": 1.05,
+    "shadowMap": {
+      "enabled": true,
+      "type": 1,
+      "autoUpdate": true
+    },
+    "capabilities": {
+      "maxTextures": 32,
+      "maxVertexTextures": 32,
+      "maxTextureSize": 8192,
+      "maxCubemapSize": 16384,
+      "maxAttributes": 16,
+      "maxVertexUniforms": 4096,
+      "maxVaryings": 31,
+      "maxFragmentUniforms": 4096,
+      "maxSamples": 4,
+      "maxAnisotropy": 16,
+      "precision": "highp"
+    },
+    "glParams": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "shadingLanguageVersion": "WebGL GLSL ES 3.00 (OpenGL ES GLSL ES 3.0 Chromium)",
+      "maxRenderbufferSize": 8192,
+      "maxViewportDims": [
+        8192,
+        8192
+      ],
+      "supportedExtensions": [
+        "EXT_clip_control",
+        "EXT_color_buffer_float",
+        "EXT_color_buffer_half_float",
+        "EXT_conservative_depth",
+        "EXT_depth_clamp",
+        "EXT_float_blend",
+        "EXT_polygon_offset_clamp",
+        "EXT_texture_compression_bptc",
+        "EXT_texture_compression_rgtc",
+        "EXT_texture_filter_anisotropic",
+        "EXT_texture_mirror_clamp_to_edge",
+        "NV_shader_noperspective_interpolation",
+        "OES_draw_buffers_indexed",
+        "OES_sample_variables",
+        "OES_shader_multisample_interpolation",
+        "OES_texture_float_linear",
+        "OVR_multiview2",
+        "WEBGL_clip_cull_distance",
+        "WEBGL_compressed_texture_astc",
+        "WEBGL_compressed_texture_etc",
+        "WEBGL_compressed_texture_etc1",
+        "WEBGL_compressed_texture_s3tc",
+        "WEBGL_compressed_texture_s3tc_srgb",
+        "WEBGL_debug_renderer_info",
+        "WEBGL_debug_shaders",
+        "WEBGL_lose_context",
+        "WEBGL_multi_draw",
+        "WEBGL_polygon_mode",
+        "WEBGL_stencil_texturing"
+      ]
+    }
+  },
+  "renderTargets": {
+    "targetA": {
+      "name": "Reality A Target",
+      "width": 1600,
+      "height": 857,
+      "samples": 0,
+      "depthBuffer": true,
+      "stencilBuffer": false,
+      "texture": {
+        "name": "RenderTarget_RealityA",
+        "colorSpace": "srgb",
+        "format": 1023,
+        "type": 1016,
+        "minFilter": 1006,
+        "magFilter": 1006,
+        "generateMipmaps": false,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1001,
+        "wrapT": 1001
+      }
+    },
+    "targetB": {
+      "name": "Reality B Target",
+      "width": 1600,
+      "height": 857,
+      "samples": 0,
+      "depthBuffer": true,
+      "stencilBuffer": false,
+      "texture": {
+        "name": "RenderTarget_RealityB",
+        "colorSpace": "srgb",
+        "format": 1023,
+        "type": 1016,
+        "minFilter": 1006,
+        "magFilter": 1006,
+        "generateMipmaps": false,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1001,
+        "wrapT": 1001
+      }
+    },
+    "fluidVelocity": {
+      "read": {
+        "name": "Fluid Velocity Read",
+        "width": 256,
+        "height": 137,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      },
+      "write": {
+        "name": "Fluid Velocity Write",
+        "width": 256,
+        "height": 137,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      }
+    },
+    "fluidPressure": {
+      "read": {
+        "name": "Fluid Pressure Read",
+        "width": 256,
+        "height": 137,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      },
+      "write": {
+        "name": "Fluid Pressure Write",
+        "width": 256,
+        "height": 137,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      }
+    },
+    "fluidDensity": {
+      "read": {
+        "name": "Fluid Density Read",
+        "width": 512,
+        "height": 274,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      },
+      "write": {
+        "name": "Fluid Density Write",
+        "width": 512,
+        "height": 274,
+        "samples": 0,
+        "depthBuffer": false,
+        "stencilBuffer": false,
+        "texture": {
+          "name": "",
+          "colorSpace": "",
+          "format": 1023,
+          "type": 1016,
+          "minFilter": 1006,
+          "magFilter": 1006,
+          "generateMipmaps": false,
+          "anisotropy": 1,
+          "flipY": false,
+          "wrapS": 1001,
+          "wrapT": 1001
+        }
+      }
+    },
+    "fluidDivergence": {
+      "name": "Fluid Divergence",
+      "width": 256,
+      "height": 137,
+      "samples": 0,
+      "depthBuffer": false,
+      "stencilBuffer": false,
+      "texture": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1016,
+        "minFilter": 1006,
+        "magFilter": 1006,
+        "generateMipmaps": false,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1001,
+        "wrapT": 1001
+      }
+    }
+  },
+  "shadowConfiguration": {
+    "keyLightA": {
+      "castShadow": true,
+      "intensity": 2,
+      "color": "#fff2e6",
+      "position": [
+        2.8,
+        3.5,
+        3
+      ],
+      "shadowMapSize": [
+        2048,
+        2048
+      ],
+      "bias": -0.0001,
+      "normalBias": 0,
+      "cameraFrustum": {
+        "left": -5,
+        "right": 5,
+        "top": 5,
+        "bottom": -5,
+        "near": 0.5,
+        "far": 500
+      }
+    },
+    "contactShadow": {
+      "present": true,
+      "position": [
+        0,
+        -1.002,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "opacity": 0.85
+    }
+  },
+  "materials": {
+    "realityA": {
+      "name": "RealityA_ClassicCoke_Material",
+      "type": "MeshPhysicalMaterial",
+      "metalness": 0.85,
+      "roughness": 1,
+      "clearcoat": 0.35,
+      "clearcoatRoughness": 0.08,
+      "diffuseMap": {
+        "name": "",
+        "colorSpace": "srgb",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "normalMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "roughnessMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "metalnessMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      }
+    },
+    "realityB": {
+      "name": "RealityB_DietCoke_Material",
+      "type": "MeshPhysicalMaterial",
+      "metalness": 0.9,
+      "roughness": 1,
+      "clearcoat": 0.15,
+      "clearcoatRoughness": 0.05,
+      "diffuseMap": {
+        "name": "",
+        "colorSpace": "srgb",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "normalMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "roughnessMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      },
+      "metalnessMap": {
+        "name": "",
+        "colorSpace": "",
+        "format": 1023,
+        "type": 1009,
+        "minFilter": 1008,
+        "magFilter": 1006,
+        "generateMipmaps": true,
+        "anisotropy": 1,
+        "flipY": false,
+        "wrapS": 1000,
+        "wrapT": 1000
+      }
+    }
+  },
+  "compositor": {
+    "materialName": "DualReality_CompositorMaterial",
+    "toneMapped": false,
+    "depthTest": false,
+    "depthWrite": false,
+    "config": {
+      "densityThreshold": 0.16,
+      "densityFeather": 0.22,
+      "chromaticAberration": 0.008,
+      "boundaryNoiseStrength": 0.02,
+      "boundaryNoiseScale": 6
+    }
+  }
+}

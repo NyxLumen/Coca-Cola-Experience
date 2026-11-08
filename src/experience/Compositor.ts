@@ -262,18 +262,20 @@ export class Compositor {
   private quadMesh: THREE.Mesh;
   private config: CompositorConfig = { ...DEFAULT_COMPOSITOR_CONFIG };
 
-  constructor(width: number, height: number, dpr: number) {
+  constructor(width: number, height: number, dpr: number, maxSamples: number = 4) {
     const effectiveWidth = Math.max(1, Math.floor(width * dpr));
     const effectiveHeight = Math.max(1, Math.floor(height * dpr));
+    const samples = Math.max(0, Math.min(4, maxSamples));
 
     const rtOptions: THREE.RenderTargetOptions = {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
       type: THREE.HalfFloatType,
-      colorSpace: THREE.SRGBColorSpace,
+      colorSpace: THREE.LinearSRGBColorSpace,
       depthBuffer: true,
       stencilBuffer: false,
+      samples,
     };
 
     this.targetA = new THREE.WebGLRenderTarget(effectiveWidth, effectiveHeight, rtOptions);

@@ -98,8 +98,8 @@ export class ExperienceEngine {
       this.config.fluidConfig
     );
 
-    // 6. Compositor Pass
-    this.compositor = new Compositor(width, height, dpr);
+    // 6. Compositor Pass with Hardware MSAA (samples capped at capabilities.maxSamples)
+    this.compositor = new Compositor(width, height, dpr, this.renderer.capabilities.maxSamples);
     this.compositor.setFluidTextures(
       this.fluidSimulation.getDensityTexture(),
       this.fluidSimulation.getVelocityTexture(),
@@ -299,17 +299,36 @@ export class ExperienceEngine {
         // Reset renderer calls count for per-frame metric tracking
         this.renderer.info.reset();
 
-        // 1. Pass A: Render Reality A to Target A
-        this.renderer.setRenderTarget(this.compositor.targetA);
-        this.renderer.render(this.realityA.scene, this.camera);
-        const callsA = this.renderer.info.render.calls;
+        const currentMode = this.config.mode;
+        let callsA = 0;
+        let callsB = 0;
 
-        // 2. Pass B: Render Reality B to Target B
-        this.renderer.setRenderTarget(this.compositor.targetB);
-        this.renderer.render(this.realityB.scene, this.camera);
-        const callsB = this.renderer.info.render.calls - callsA;
+        if (currentMode === 'reality-a') {
+          // Optimized Single Reality A Pass: Render Reality A to Target A, bypass Reality B
+          this.renderer.setRenderTarget(this.compositor.targetA);
+          this.renderer.render(this.realityA.scene, this.camera);
+          callsA = this.renderer.info.render.calls;
+          callsB = 0;
+        } else if (currentMode === 'reality-b') {
+          // Optimized Single Reality B Pass: Render Reality B to Target B, bypass Reality A
+          this.renderer.setRenderTarget(this.compositor.targetB);
+          this.renderer.render(this.realityB.scene, this.camera);
+          callsB = this.renderer.info.render.calls;
+          callsA = 0;
+        } else {
+          // Dual-Reality & Compositor Modes: Render both realities to their respective MSAA targets
+          // 1. Pass A: Render Reality A to Target A
+          this.renderer.setRenderTarget(this.compositor.targetA);
+          this.renderer.render(this.realityA.scene, this.camera);
+          callsA = this.renderer.info.render.calls;
 
-        // 3. Pass C: Fullscreen Compositor Render
+          // 2. Pass B: Render Reality B to Target B
+          this.renderer.setRenderTarget(this.compositor.targetB);
+          this.renderer.render(this.realityB.scene, this.camera);
+          callsB = this.renderer.info.render.calls - callsA;
+        }
+
+        // Pass C: Fullscreen Compositor Render (Blits MSAA targets to screen)
         this.compositor.updateTime(currentTime * 0.001);
         this.compositor.render(this.renderer);
         const totalCalls = this.renderer.info.render.calls;

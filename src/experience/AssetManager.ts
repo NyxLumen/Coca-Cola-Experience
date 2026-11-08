@@ -39,6 +39,8 @@ export class AssetManager {
     texture.wrapT = THREE.RepeatWrapping;
     // CRITICAL: glTF UV convention requires flipY = false to match UV mapping
     texture.flipY = false;
+    // Phase 2D: Apply 16x anisotropic filtering on product textures for oblique sharpness
+    texture.anisotropy = 16;
     this.textureCache.set(path, texture);
     return texture;
   }

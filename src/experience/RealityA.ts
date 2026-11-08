@@ -51,6 +51,18 @@ export class RealityA {
     this.keyLight.shadow.mapSize.width = 2048;
     this.keyLight.shadow.mapSize.height = 2048;
     this.keyLight.shadow.bias = -0.0001;
+    this.keyLight.shadow.normalBias = 0.015;
+
+    // Phase 2D: Tighten shadow camera frustum to fit can bounds (16x effective texel density)
+    const shadowD = 1.1;
+    this.keyLight.shadow.camera.left = -shadowD;
+    this.keyLight.shadow.camera.right = shadowD;
+    this.keyLight.shadow.camera.top = shadowD * 1.15;
+    this.keyLight.shadow.camera.bottom = -shadowD * 1.15;
+    this.keyLight.shadow.camera.near = 1.8;
+    this.keyLight.shadow.camera.far = 8.5;
+    this.keyLight.shadow.camera.updateProjectionMatrix();
+
     this.scene.add(this.keyLight);
 
     // Fill Light: Warm rose/crimson fill maintaining soft shadow contrast
